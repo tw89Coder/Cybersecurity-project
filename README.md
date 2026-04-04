@@ -20,7 +20,8 @@
 ```
 .
 ├── target/                     # Vulnerable target services
-│   └── target_app.py           #   Flask SSTI vulnerable API
+│   ├── target_app.py           #   Flask SSTI vulnerable API
+│   └── honeypot.py             #   Fake SSH honeypot (port 2222) ← NEW
 │
 ├── red_team/                   # Red team attack tooling
 │   ├── red_attacker.py         #   Fileless ICMP C2 (memfd_create + XOR)
@@ -34,8 +35,10 @@
 │   └── exfil_listener.py       #   Exfiltration listener (attacker side)
 │
 ├── blue_team/                  # Blue team defense tooling
+│   ├── soc_dashboard.py       #   Real-time SOC web dashboard ← NEW
+│   ├── blue_mdr_network.py    #   Network MDR: trap.log + iptables
 │   ├── blue_ebpf_mdr.py       #   eBPF v1: memfd + ICMP detection
-│   └── blue_ebpf_mdr_v2.py    #   eBPF v2: + reverse shell detection ← NEW
+│   └── blue_ebpf_mdr_v2.py    #   eBPF v2: + reverse shell detection
 │
 ├── docs/                       # Documentation & reports
 │   ├── DEMO_FLOW.md            #   Complete 6-round demo script ← NEW

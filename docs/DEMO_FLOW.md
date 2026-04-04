@@ -1,7 +1,7 @@
-# Attack-Defense Demo Flow — 6 回合攻防演練腳本
+# Attack-Defense Demo Flow — 7 回合攻防演練腳本
 
 > 本文件為完整的 Demo 執行腳本，所有組員照著跑即可。
-> 每回合約 2-3 分鐘，全程約 15-20 分鐘。
+> 每回合約 2-3 分鐘，全程約 20-25 分鐘。
 
 ---
 
@@ -18,10 +18,12 @@
 
 | 終端 | 角色 | 顏色建議 |
 |------|------|----------|
-| **T1** | 靶機 (Target) | 白色 |
+| **T1** | 靶機 (Target + Honeypot) | 白色 |
 | **T2** | 藍軍 (Blue Team) | 藍色 |
 | **T3** | 紅軍 C2 / Listener | 紅色 |
 | **T4** | 紅軍攻擊指令 | 黃色 |
+
+> **提示**：T1 需要同時跑靶機和蜜罐，可用 tmux 分割或開兩個子終端。
 
 ### 變數替換
 
@@ -46,20 +48,44 @@ bash setup_env.sh
 
 ## 回合 1 — 偵察 (Reconnaissance)
 
-**目的**：展示紅方如何發現目標服務
+**目的**：展示紅方如何發現目標服務，以及蜜罐陷阱
 
-### T1 — 啟動靶機
+### T1 — 啟動靶機 + 蜜罐
 
 ```bash
+# 終端 T1a — 靶機
 sudo python3 target/target_app.py
+
+# 終端 T1b — 蜜罐（另一個子終端或用 & 背景執行）
+sudo python3 target/honeypot.py
+```
+
+預期輸出（蜜罐）：
+```
+=======================================================
+  Honeypot (Fake SSH) | 0.0.0.0:2222
+  Banner: SSH-2.0-OpenSSH_8.9p1 Ubuntu-3ubuntu0.4
+  Log:    /home/.../trap.log
+=======================================================
+[*] Waiting for connections...
+```
+
+### T2 — 啟動網路層 MDR
+
+```bash
+sudo python3 blue_team/blue_mdr_network.py --cleanup
 ```
 
 預期輸出：
 ```
-=======================================================
-  Diagnostic API | 0.0.0.0:9999
-  SSTI Vuln on /diag  (render_template_string + f-string)
-=======================================================
++====================================================+
+|   Blue Team  Network MDR  v1.0                     |
+|   Honeypot Trap Monitor + iptables Auto-Block       |
++====================================================+
+  Log file : /home/.../trap.log
+  Cleanup  : YES
+
+[*] Monitoring trap.log...
 ```
 
 ### T4 — 紅方偵察
@@ -71,18 +97,102 @@ bash red_team/recon.sh <TARGET_IP>
 預期輸出（重點）：
 ```
 PORT     STATE SERVICE
-9999/tcp open  abyss
+2222/tcp open  ssh          ← 蜜罐（看起來像 SSH）
+9999/tcp open  abyss        ← 真正目標
 ```
 
 ### 講解要點
 
-- nmap 掃描發現 port 9999 開放
-- 服務識別為 Diagnostic API
+- nmap 掃描發現 port 2222（看起來像 SSH）和 port 9999
+- 紅方需要判斷哪個是真正目標
 - MITRE ATT&CK: **T1595** (Active Scanning)
 
 ---
 
-## 回合 2 — 紅方攻擊成功（藍方 OFF）
+## 回合 1b — 蜜罐觸發 + IP 封鎖
+
+**目的**：展示蜜罐主動欺敵 — 紅方觸碰假服務即被封鎖
+
+### T4 — 紅方嘗試連線 SSH（踩到蜜罐）
+
+```bash
+nc -v <TARGET_IP> 2222
+```
+
+預期輸出：
+```
+Connection to <TARGET_IP> 2222 port [tcp/*] succeeded!
+SSH-2.0-OpenSSH_8.9p1 Ubuntu-3ubuntu0.4
+```
+
+> 紅方看到 SSH banner，以為是真的 SSH。但蜜罐已記錄 IP。
+
+### T1b — 蜜罐記錄
+
+```
+[!] TRAP  2026-04-04 14:25:01  <ATTACKER_IP>:54321
+    Logged: <ATTACKER_IP> → trap.log
+```
+
+### T2 — MDR 自動封鎖
+
+```
+14:25:01   BLOCK      <ATTACKER_IP>    iptables -I INPUT 1 -s <ATTACKER_IP> -j DROP
+    ╰─▶ Attacker <ATTACKER_IP> blocked from ALL ports!
+```
+
+### T4 — 紅方驗證被封鎖
+
+```bash
+# 嘗試連線真正目標 — 失敗
+curl -s --connect-timeout 3 http://<TARGET_IP>:9999/
+# → 連線超時，所有 port 都被封鎖
+```
+
+### 講解要點
+
+- 蜜罐 = 零誤報的入侵偵測（正常用戶不會碰 port 2222）
+- iptables 封鎖是 **IP 層級**，所有 port 都不可達
+- MDR 反應速度 < 1 秒（polling interval）
+- **弱點**：只封鎖 IP，攻擊者換 IP 就能繞過 → 下一回合展示
+
+---
+
+## 回合 1c — 紅方 IP 切換繞過網路封鎖
+
+**目的**：展示網路層防禦的限制 — IP 可以更換
+
+### T4 — 紅方掛載新 IP
+
+```bash
+bash red_team/ip_switch.sh add
+```
+
+預期輸出：
+```
+[*] Adding alias IP: 172.22.137.15 on eth0
+[+] Done. Current IPs:
+    inet 172.22.137.14/20    ← 被封鎖的 IP
+    inet 172.22.137.15/20    ← 新的未封鎖 IP
+```
+
+### T4 — 用新 IP 測試連線
+
+```bash
+curl -s --interface 172.22.137.15 http://<TARGET_IP>:9999/
+```
+
+→ 連線成功！新 IP 未被封鎖。
+
+### 講解要點
+
+- 網路層防禦（iptables）只封鎖已知 IP → 攻擊者換 IP 就繞過
+- 這就是為什麼需要 **Kernel 層** 防禦（eBPF）作為第二層
+- 防禦需要分層：網路層擋已知威脅、Kernel 層擋未知行為
+
+---
+
+## 回合 2 — 紅方攻擊成功（eBPF 藍方 OFF）
 
 **目的**：展示完整 Kill Chain — SSTI → Fileless Agent → ICMP C2
 
@@ -360,10 +470,30 @@ Listener 不會收到連線（進程在 connect() 前被殺）。
 ### 攻防時間線
 
 ```
-回合 1   回合 2         回合 3         回合 4         回合 5         回合 6
-偵察  →  紅方攻擊成功 → 藍方清除威脅 → 紅方再攻被擋 → 紅方繞過v1   → 藍方升級v2攔截
-nmap     SSTI+memfd     cold-start     eBPF kill      reverse shell  connect hook
-         ICMP C2        /proc scan     memfd blocked   TCP bypass     port detect
+回合1     回合1b       回合1c      回合2         回合3         回合4
+偵察   →  蜜罐觸發  →  IP切換   → 紅方攻擊成功 → 藍方清除威脅 → 紅方再攻被擋
+nmap      nc 2222      ip alias    SSTI+memfd    cold-start     eBPF kill
+          MDR封鎖      繞過封鎖    ICMP C2        /proc scan     memfd blocked
+
+回合5         回合6
+紅方繞過v1 → 藍方升級v2攔截
+reverse shell  connect hook
+TCP bypass     port detect
+```
+
+### 防禦分層架構
+
+```
+┌─────────────────────────────────────────────────┐
+│  Layer 1 — 網路層 (Network)                     │
+│  蜜罐 (honeypot.py) + iptables (blue_mdr_network.py) │
+│  → 封鎖已知惡意 IP                               │
+├─────────────────────────────────────────────────┤
+│  Layer 2 — Kernel 層 (eBPF)                     │
+│  v1: memfd + execve + ICMP (blue_ebpf_mdr.py)  │
+│  v2: + connect + dup2/dup3 (blue_ebpf_mdr_v2.py)│
+│  → 封鎖惡意行為（不管來源 IP）                    │
+└─────────────────────────────────────────────────┘
 ```
 
 ### Kill Chain 覆蓋
@@ -371,6 +501,8 @@ nmap     SSTI+memfd     cold-start     eBPF kill      reverse shell  connect hoo
 | Phase | 技術 | 紅方工具 | 藍方偵測 |
 |-------|------|----------|----------|
 | 1 Recon | nmap 掃描 | `recon.sh` | — |
+| 1b Trap | 蜜罐觸發 | `nc <IP> 2222` | `honeypot.py` → `blue_mdr_network.py` |
+| 1c Evasion | IP 切換 | `ip_switch.sh` | — (網路層盲區) |
 | 2 Weaponize | memfd_create 無檔案 | `red_attacker.py` | `memfd_create` hook |
 | 3 Deliver | SSTI 注入 | curl POST | — |
 | 4 Exploit | fork + execve | (embedded) | `execve /proc/fd` hook |
@@ -394,13 +526,15 @@ nmap     SSTI+memfd     cold-start     eBPF kill      reverse shell  connect hoo
 
 **偵測覆蓋：**
 
-| ID | 偵測點 | Hook | 版本 |
+| ID | 偵測點 | 機制 | 層級 |
 |----|--------|------|------|
-| T1620 | Reflective Loading | `sys_enter_memfd_create` | v1 |
-| T1059 | Execution from /proc/fd | `sys_enter_execve` | v1 |
-| T1095 | Raw ICMP Socket | `sys_enter_socket` | v1 |
-| T1071.001 | Suspect Port Connect | `sys_enter_connect` | v2 |
-| T1059.006 | Reverse Shell Pattern | `sys_enter_dup2/dup3` | v2 |
+| T1595 | Honeypot Trap | `honeypot.py` → `trap.log` | 網路層 |
+| — | IP Auto-Block | `blue_mdr_network.py` → iptables | 網路層 |
+| T1620 | Reflective Loading | `sys_enter_memfd_create` | Kernel (v1) |
+| T1059 | Execution from /proc/fd | `sys_enter_execve` | Kernel (v1) |
+| T1095 | Raw ICMP Socket | `sys_enter_socket` | Kernel (v1) |
+| T1071.001 | Suspect Port Connect | `sys_enter_connect` | Kernel (v2) |
+| T1059.006 | Reverse Shell Pattern | `sys_enter_dup2/dup3` | Kernel (v2) |
 
 ---
 
@@ -414,3 +548,6 @@ nmap     SSTI+memfd     cold-start     eBPF kill      reverse shell  connect hoo
 | C2 收不到 beacon | 確認防火牆允許 ICMP，兩機器能互 ping |
 | Reverse shell 連不上 | 確認防火牆允許 TCP 4444，attacker IP 正確 |
 | eBPF v2 誤殺合法進程 | 用 `--whitelist PID1,PID2` 排除 |
+| 蜜罐 port 2222 被占用 | `sudo lsof -i :2222` 找出佔用進程 |
+| iptables 規則殘留 | `sudo iptables -L INPUT -n --line-numbers` 查看，`sudo iptables -D INPUT <num>` 刪除 |
+| ip_switch.sh IP 不對 | 編輯腳本中的 PRIMARY_IP 和 ALIAS_IP 變數 |
