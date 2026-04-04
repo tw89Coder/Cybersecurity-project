@@ -45,6 +45,7 @@ import sys
 import ctypes
 import struct
 import socket
+import json
 import argparse
 import time
 import signal
@@ -389,6 +390,8 @@ def main():
     ap.add_argument('--suspect-ports', type=str,
                     default=','.join(str(p) for p in DEFAULT_SUSPECT_PORTS),
                     help=f'Suspicious ports (default: {DEFAULT_SUSPECT_PORTS})')
+    ap.add_argument('--soc-log', type=str, default='',
+                    help='Write events to JSONL file for SOC dashboard')
     args = ap.parse_args()
 
     if os.geteuid() != 0:
@@ -530,6 +533,26 @@ def main():
             print(f'\033[93m    \u2570\u2500\u25b6 '
                   f'SUSPECT PORT: PID {e.pid} connecting to '
                   f'known C2 port {e.port}\033[0m')
+
+        # Write to SOC dashboard log
+        if args.soc_log:
+            sev_raw = {1: 'HIGH', 2: 'CRITICAL', 3: 'CRITICAL',
+                       4: 'CRITICAL', 5: 'CRITICAL'}
+            soc_evt = {
+                'ts': time.strftime('%Y-%m-%d %H:%M:%S'),
+                'source': 'EBPF_v2',
+                'event': label,
+                'severity': sev_raw.get(e.event_type, 'INFO'),
+                'ip': '',
+                'comm': comm,
+                'action': 'KILLED' if e.killed else 'ALERT',
+                'detail': f'PID:{e.pid} PPID:{e.ppid} {det}',
+            }
+            try:
+                with open(args.soc_log, 'a') as f:
+                    f.write(json.dumps(soc_evt) + '\n')
+            except OSError:
+                pass
 
     b['events'].open_perf_buffer(on_event, page_cnt=64)
 
