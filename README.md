@@ -24,7 +24,7 @@
 │   └── honeypot.py             #   Fake SSH honeypot (port 2222) ← NEW
 │
 ├── red_team/                   # Red team attack tooling
-│   ├── red_attacker.py         #   Fileless ICMP C2 (memfd_create + XOR)
+│   ├── red_attacker.py         #   Fileless ICMP C2 (memfd_create + AES-256-CTR)
 │   ├── red_reverse_shell.py    #   TCP reverse shell (eBPF v1 bypass) ← NEW
 │   ├── exploit.py              #   WAF bypass exploit (Base64 + ${IFS})
 │   ├── recon.sh                #   nmap reconnaissance
@@ -41,10 +41,12 @@
 │   └── blue_ebpf_mdr_v2.py    #   eBPF v2: + reverse shell detection
 │
 ├── docs/                       # Documentation & reports
-│   ├── DEMO_FLOW.md            #   Complete 6-round demo script ← NEW
+│   ├── DEMO_FLOW.md            #   Complete 7-round demo script
 │   ├── RED_TEAM_PLAYBOOK.md    #   Attack playbook (6-phase kill chain)
 │   ├── REPORT_ZH.md            #   Technical analysis report (Chinese)
 │   ├── REPORT_EN.md            #   Technical analysis report (English)
+│   ├── PROJECT_PROPOSAL.md     #   Project proposal (English)
+│   ├── PROJECT_PROPOSAL_ZH.md  #   Project proposal (Chinese)
 │   └── design/                 #   Development planning docs (archived)
 │       ├── exfiltration-design.md
 │       └── exfiltration-plan.md
@@ -182,7 +184,7 @@ reverse_shell.py             pty.spawn
 
 ## Reports & Docs / 技術報告與文件
 
-- [Demo Flow / 演練腳本](docs/DEMO_FLOW.md) — Complete 6-round attack-defense demo script
+- [Demo Flow / 演練腳本](docs/DEMO_FLOW.md) — Complete 7-round attack-defense demo script
 - [Red Team Playbook](docs/RED_TEAM_PLAYBOOK.md) — Attack playbook with step-by-step commands
 - [Chinese / 中文報告](docs/REPORT_ZH.md) — Kill Chain 各階段原理分析
 - [English Report](docs/REPORT_EN.md) — Full technical analysis
