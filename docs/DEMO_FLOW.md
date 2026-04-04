@@ -565,5 +565,24 @@ TCP bypass     port detect
 | Reverse shell 連不上 | 確認防火牆允許 TCP 4444，attacker IP 正確 |
 | eBPF v2 誤殺合法進程 | 用 `--whitelist PID1,PID2` 排除 |
 | 蜜罐 port 2222 被占用 | `sudo lsof -i :2222` 找出佔用進程 |
-| iptables 規則殘留 | `sudo iptables -L INPUT -n --line-numbers` 查看，`sudo iptables -D INPUT <num>` 刪除 |
+| iptables 規則殘留 | `sudo bash cleanup.sh` 一鍵清除 |
 | ip_switch.sh IP 不對 | 編輯腳本中的 PRIMARY_IP 和 ALIAS_IP 變數 |
+| 上次 demo 殘留影響本次 | `sudo bash cleanup.sh`（清除程序、iptables、log、loot、crontab） |
+| 想預覽會清什麼 | `sudo bash cleanup.sh --dry` |
+
+---
+
+## 環境重置
+
+每次 Demo 結束後，執行以下指令清除所有殘留：
+
+```bash
+sudo bash cleanup.sh
+```
+
+會清除：殘留程序、iptables 規則、IP alias、log 檔案、loot 目錄、crontab 持久化。
+
+預覽模式（不實際執行）：
+```bash
+sudo bash cleanup.sh --dry
+```

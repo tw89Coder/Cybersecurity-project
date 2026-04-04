@@ -220,3 +220,4 @@ exit
 4. **純 CLI 操作** — 本演練禁止使用圖形化工具
 5. **爆炸半徑控制** — 不進行提權和破壞性操作
 6. **完整 Demo 腳本** — 請參考 `docs/DEMO_FLOW.md` 取得 7 回合完整演練流程
+7. **環境重置** — Demo 結束後執行 `sudo bash cleanup.sh` 一鍵清除所有殘留（程序、iptables、log、loot、crontab）
