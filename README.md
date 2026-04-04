@@ -45,8 +45,9 @@
 │   ├── RED_TEAM_PLAYBOOK.md    #   Attack playbook (6-phase kill chain)
 │   ├── REPORT_ZH.md            #   Technical analysis report (Chinese)
 │   ├── REPORT_EN.md            #   Technical analysis report (English)
-│   ├── exfiltration-design.md  #   Exfiltration system specification
-│   └── exfiltration-plan.md    #   Exfiltration implementation plan
+│   └── design/                 #   Development planning docs (archived)
+│       ├── exfiltration-design.md
+│       └── exfiltration-plan.md
 │
 ├── setup_env.sh                # One-command environment setup
 ├── requirements.txt            # Python dependencies
