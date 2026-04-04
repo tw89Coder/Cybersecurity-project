@@ -2,11 +2,18 @@
 # ============================================================
 # setup_env.sh - Attack-Defense Lab Environment Setup
 # Tested on: Ubuntu 22.04 / 24.04 (WSL2 or VM)
+#
+# Uses Python venv for isolation — won't pollute system packages.
 # ============================================================
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+VENV_DIR="$SCRIPT_DIR/.venv"
 
+echo "[*] ===== Attack-Defense Lab Setup ====="
+echo ""
+
+# ── System packages ──────────────────────────────────────────
 echo "[*] Installing system packages..."
 sudo apt-get update
 sudo apt-get install -y \
@@ -22,13 +29,35 @@ if ! dpkg -s linux-headers-"$(uname -r)" &>/dev/null; then
     sudo apt-get install -y linux-headers-generic || true
 fi
 
-echo "[*] Installing Python packages..."
-pip3 install --break-system-packages flask 2>/dev/null || pip3 install flask
+# ── Python venv ──────────────────────────────────────────────
+echo ""
+echo "[*] Setting up Python virtual environment..."
 
+if [ -d "$VENV_DIR" ]; then
+    echo "    .venv already exists, updating..."
+else
+    python3 -m venv --system-site-packages "$VENV_DIR"
+    echo "    Created .venv at $VENV_DIR"
+fi
+
+# --system-site-packages allows access to system-installed python3-bpfcc
+# which cannot be installed via pip (it's a system package with kernel bindings)
+
+source "$VENV_DIR/bin/activate"
+echo "    Activated venv: $(which python3)"
+
+echo "[*] Installing Python packages in venv..."
+pip install --upgrade pip
+pip install -r "$SCRIPT_DIR/requirements.txt"
+
+# ── Permissions ──────────────────────────────────────────────
+echo ""
 echo "[*] Setting script permissions..."
 find "$SCRIPT_DIR" -name '*.sh' -exec chmod +x {} +
 find "$SCRIPT_DIR" -name '*.py' -exec chmod +x {} +
 
+# ── Verification ─────────────────────────────────────────────
+echo ""
 echo "[*] Verifying installation..."
 python3 -c "from flask import Flask; print('  Flask OK')"
 python3 -c "from bcc import BPF; print('  BCC/eBPF OK')" 2>/dev/null \
@@ -36,11 +65,20 @@ python3 -c "from bcc import BPF; print('  BCC/eBPF OK')" 2>/dev/null \
 which nmap    >/dev/null && echo "  nmap OK"
 which tcpdump >/dev/null && echo "  tcpdump OK"
 
+# ── Done ─────────────────────────────────────────────────────
 echo ""
 echo "[+] Setup complete."
 echo ""
-echo "  Run order:"
-echo "  Terminal 1 (Target):  sudo python3 target/target_app.py"
-echo "  Terminal 2 (Blue):    sudo python3 blue_team/blue_ebpf_mdr.py --kill"
-echo "  Terminal 3 (Red C2):  sudo python3 red_team/red_attacker.py -t TARGET_IP -l ATTACKER_IP"
-echo "  Terminal 4 (Red ATK): <paste curl command from Terminal 3>"
+echo "  ┌─────────────────────────────────────────────────────┐"
+echo "  │  IMPORTANT: Activate venv before running any tool:  │"
+echo "  │                                                     │"
+echo "  │    source .venv/bin/activate                        │"
+echo "  │                                                     │"
+echo "  │  Or use the full path:                              │"
+echo "  │    .venv/bin/python3 <script.py>                    │"
+echo "  │                                                     │"
+echo "  │  For eBPF tools (need sudo + venv):                 │"
+echo "  │    sudo .venv/bin/python3 blue_team/blue_ebpf_mdr.py│"
+echo "  └─────────────────────────────────────────────────────┘"
+echo ""
+echo "  Quick start: see docs/DEMO_FLOW.md"

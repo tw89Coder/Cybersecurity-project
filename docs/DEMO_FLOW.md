@@ -42,7 +42,15 @@
 # 安裝環境（只需執行一次）
 cd ~/cybersecurity
 bash setup_env.sh
+
+# 每次開新終端都要先啟用 venv
+source .venv/bin/activate
+
+# 需要 sudo 的工具用這個方式跑（保留 venv 的 Python）：
+sudo .venv/bin/python3 <script.py>
 ```
+
+> **重要**：所有 Python 工具都透過 venv 執行，避免汙染系統環境。
 
 ---
 
