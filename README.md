@@ -128,7 +128,7 @@ reverse_shell.py             pty.spawn
 |-----------|-----------|------|
 | **SSTI** | f-string + `render_template_string` → Jinja2 evaluates `{{ }}` as code | `target/target_app.py` |
 | **Fileless Execution** | `memfd_create` (syscall 319) creates anonymous RAM-only fd; `execve` via `/proc/pid/fd/N` | `red_team/red_attacker.py` |
-| **ICMP Covert C2** | Data hidden in ICMP echo-request payload; XOR encrypted; no TCP/UDP | `red_team/red_attacker.py` |
+| **ICMP Covert C2** | Data hidden in ICMP echo-request payload; AES-256-CTR encrypted via ctypes+OpenSSL; no TCP/UDP | `red_team/red_attacker.py` |
 | **TCP Reverse Shell** | `fork` → `connect` → `dup2(fd,0/1/2)` → `pty.spawn` — bypasses eBPF v1 | `red_team/red_reverse_shell.py` |
 | **WAF Bypass** | `${IFS}` space evasion + Base64 encoding + backslash obfuscation | `red_team/exploit.py` |
 | **DNS/ICMP Exfil** | Base32-over-DNS and hex-over-ICMP covert exfiltration channels | `red_team/exfil_agent.py` |
@@ -155,7 +155,7 @@ reverse_shell.py             pty.spawn
 | T1190 | Exploit Public-Facing App | SSTI injection |
 | T1059.006 | Python Execution | memfd loader + agent + reverse shell |
 | T1620 | Reflective Code Loading | `memfd_create` → `execve` |
-| T1027 | Obfuscation | Double Base64 + XOR |
+| T1027 | Obfuscation | Double Base64 + AES-256-CTR |
 | T1095 | Non-App Layer Protocol | ICMP covert C2 |
 | T1071.001 | Application Layer Protocol | TCP reverse shell |
 | T1048.003 | Exfil Over Alternative Protocol | DNS/ICMP exfil |
