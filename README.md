@@ -51,7 +51,8 @@
 │       ├── exfiltration-design.md
 │       └── exfiltration-plan.md
 │
-├── setup_env.sh                # One-command environment setup
+├── setup_env.sh                # One-command environment setup (auto-detects WSL2)
+├── cleanup.sh                  # One-command environment reset (kill, iptables, logs)
 ├── requirements.txt            # Python dependencies
 └── README.md                   # This file
 ```
