@@ -66,29 +66,36 @@ cd <repo>
 bash setup_env.sh
 ```
 
-**Requirements**: Ubuntu 22.04/24.04 (WSL2 or VM), root access.
+**Dual-machine architecture** (setup_env.sh auto-detects WSL2):
 
-**System packages**: python3, flask, bpfcc-tools, python3-bpfcc, linux-headers, nmap, tcpdump
+| Machine | Role | OS | eBPF |
+|---------|------|----|------|
+| Lab server | Target + Blue Team | Ubuntu 24.04 (native) | Yes |
+| Student laptop | Red Team (attacker) | Ubuntu 22.04 (WSL2) | Not needed |
+
+```bash
+# Run on BOTH machines:
+git clone https://github.com/<org>/<repo>.git && cd <repo>
+bash setup_env.sh    # auto-detects WSL2, installs appropriate packages
+```
 
 ### 2. Execution Order / 執行順序
 
-Open four terminals. Run commands **from the project root directory**.
-
-> **Complete Demo**: See [docs/DEMO_FLOW.md](docs/DEMO_FLOW.md) for the full 6-round demo script with detailed commands and expected outputs.
+> **Complete Demo**: See [docs/DEMO_FLOW.md](docs/DEMO_FLOW.md) for the full 7-round demo script with detailed commands and expected outputs.
 
 **Quick Start (basic 2-scenario test):**
 
 ```bash
-# Terminal 1 — Target (靶機)
+# Lab machine — Terminal 1: Target (靶機)
 sudo .venv/bin/python3 target/target_app.py
 
-# Terminal 2 — Blue Team (藍軍 eBPF v2)
+# Lab machine — Terminal 2: Blue Team (藍軍 eBPF v2)
 sudo .venv/bin/python3 blue_team/blue_ebpf_mdr_v2.py --kill
 
-# Terminal 3 — Red Team C2 (紅軍 C2 Server)
+# WSL2 — Terminal 3: Red Team C2 (紅軍 C2 Server)
 sudo .venv/bin/python3 red_team/red_attacker.py -t <TARGET_IP> -l <ATTACKER_IP>
 
-# Terminal 4 — Red Team Attack (紅軍觸發攻擊)
+# WSL2 — Terminal 4: Red Team Attack (紅軍觸發攻擊)
 # Paste the curl command printed by Terminal 3
 ```
 

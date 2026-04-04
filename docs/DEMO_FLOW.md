@@ -7,21 +7,29 @@
 
 ## 環境需求
 
+### 雙機架構
+
+| 機器 | 角色 | 系統 | 說明 |
+|------|------|------|------|
+| **Lab 機器** | 靶機 + 藍軍 | Ubuntu 24.04 (原生) | 跑 target、honeypot、eBPF、MDR、SOC |
+| **WSL2 筆電** | 紅軍攻擊機 | Ubuntu 22.04 (WSL2) | 跑 recon、exploit、C2、reverse shell |
+
+> **為什麼分開？** WSL2 沒有 linux-headers，無法編譯 eBPF。紅方工具不需要 eBPF，所以在 WSL2 上跑沒問題。
+
 | 項目 | 說明 |
 |------|------|
-| 終端數量 | **4 個**（建議用 tmux 或分割視窗） |
-| 作業系統 | Ubuntu 22.04+ (WSL2 or VM)，kernel >= 5.3 |
-| Root 權限 | 靶機 + 藍軍需要 sudo |
-| 套件 | python3, flask, bpfcc-tools, python3-bpfcc, linux-headers, nmap |
+| 終端數量 | **4 個**（Lab 2 個 + WSL2 2 個） |
+| Root 權限 | Lab 端（靶機 + 藍軍）需要 sudo |
+| 安裝 | 兩台都跑 `bash setup_env.sh`（會自動偵測 WSL2） |
 
 ### 終端配置
 
-| 終端 | 角色 | 顏色建議 |
-|------|------|----------|
-| **T1** | 靶機 (Target + Honeypot) | 白色 |
-| **T2** | 藍軍 (Blue Team) | 藍色 |
-| **T3** | 紅軍 C2 / Listener | 紅色 |
-| **T4** | 紅軍攻擊指令 | 黃色 |
+| 終端 | 機器 | 角色 | 顏色建議 |
+|------|------|------|----------|
+| **T1** | Lab | 靶機 (Target + Honeypot) | 白色 |
+| **T2** | Lab | 藍軍 (Blue Team) | 藍色 |
+| **T3** | WSL2 | 紅軍 C2 / Listener | 紅色 |
+| **T4** | WSL2 | 紅軍攻擊指令 | 黃色 |
 
 > **提示**：T1 需要同時跑靶機和蜜罐，可用 tmux 分割或開兩個子終端。
 
@@ -30,8 +38,8 @@
 在以下所有指令中，替換這些值：
 
 ```
-<TARGET_IP>   = 靶機 IP（例如 100.103.146.70）
-<ATTACKER_IP> = 攻擊機 IP（你的 WSL2 IP）
+<TARGET_IP>   = Lab 機器 IP（例如 100.103.146.70）
+<ATTACKER_IP> = WSL2 攻擊機 IP（你的 WSL2 IP）
 ```
 
 ---
