@@ -80,13 +80,13 @@ Open four terminals. Run commands **from the project root directory**.
 
 ```bash
 # Terminal 1 — Target (靶機)
-sudo python3 target/target_app.py
+sudo .venv/bin/python3 target/target_app.py
 
 # Terminal 2 — Blue Team (藍軍 eBPF v2)
-sudo python3 blue_team/blue_ebpf_mdr_v2.py --kill
+sudo .venv/bin/python3 blue_team/blue_ebpf_mdr_v2.py --kill
 
 # Terminal 3 — Red Team C2 (紅軍 C2 Server)
-sudo python3 red_team/red_attacker.py -t <TARGET_IP> -l <ATTACKER_IP>
+sudo .venv/bin/python3 red_team/red_attacker.py -t <TARGET_IP> -l <ATTACKER_IP>
 
 # Terminal 4 — Red Team Attack (紅軍觸發攻擊)
 # Paste the curl command printed by Terminal 3
