@@ -333,7 +333,7 @@ iptables -I INPUT 1 -s <attacker_ip> -j DROP
 
 [1] IBM Security，「資料外洩成本報告 2024」，IBM Corporation，2024。取自：https://www.ibm.com/reports/data-breach
 
-[2] A. Singh、O. Nordstrom、C. Lu 和 A. L. N. Reddy，「惡意 ICMP 隧道：漏洞防禦」，*ACISP 2003*，Lecture Notes in Computer Science，vol. 2727，Springer，2003。DOI: 10.1007/3-540-45067-X_20
+[2] A. Singh、O. Nordstrom、C. Lu 和 A. L. M. dos Santos，「惡意 ICMP 隧道：漏洞防禦」，*ACISP 2003*，Lecture Notes in Computer Science，vol. 2727，Springer，2003。DOI: 10.1007/3-540-45067-X_20
 
 [3] E. M. Hutchins、M. J. Cloppert 和 R. M. Amin，「以情報驅動的電腦網路防禦——基於對手活動分析與入侵攻擊鏈」，*Leading Issues in Information Warfare & Security Research*，vol. 1，no. 1，pp. 1-14，Lockheed Martin Corporation，2011。
 
