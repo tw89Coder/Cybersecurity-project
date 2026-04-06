@@ -333,7 +333,7 @@ The project successfully implements 7 MITRE ATT&CK attack techniques and 7 corre
 
 [1] IBM Security, "Cost of a Data Breach Report 2024," IBM Corporation, 2024. Available: https://www.ibm.com/reports/data-breach
 
-[2] A. Singh, O. Nordstrom, C. Lu, and A. L. N. Reddy, "Malicious ICMP Tunneling: Defense against the Vulnerability," in *ACISP 2003*, Lecture Notes in Computer Science, vol. 2727, Springer, 2003. DOI: 10.1007/3-540-45067-X_20
+[2] A. Singh, O. Nordstrom, C. Lu, and A. L. M. dos Santos, "Malicious ICMP Tunneling: Defense against the Vulnerability," in *ACISP 2003*, Lecture Notes in Computer Science, vol. 2727, Springer, 2003. DOI: 10.1007/3-540-45067-X_20
 
 [3] E. M. Hutchins, M. J. Cloppert, and R. M. Amin, "Intelligence-Driven Computer Network Defense Informed by Analysis of Adversary Campaigns and Intrusion Kill Chains," in *Leading Issues in Information Warfare & Security Research*, vol. 1, no. 1, pp. 1-14, Lockheed Martin Corporation, 2011.
 
