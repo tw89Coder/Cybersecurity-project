@@ -24,7 +24,7 @@
 
 ### 1.1 Project Motivation
 
-The cybersecurity threat landscape has evolved significantly in recent years. According to the IBM X-Force Threat Intelligence Index 2024, the average cost of a data breach reached USD 4.88 million globally, with attackers increasingly leveraging fileless malware techniques that reside entirely in memory to evade traditional endpoint detection solutions [1]. Meanwhile, advanced persistent threat (APT) groups routinely employ covert communication channels — such as ICMP tunneling and DNS exfiltration — to maintain command-and-control (C2) access while bypassing network-level security controls [2].
+The cybersecurity threat landscape has evolved significantly in recent years. According to the IBM Cost of a Data Breach Report 2024, the average cost of a data breach reached USD 4.88 million globally, with stolen credentials and phishing remaining the most prevalent initial attack vectors [1]. Meanwhile, advanced persistent threat (APT) groups routinely employ covert communication channels — such as ICMP tunneling and DNS exfiltration — to maintain command-and-control (C2) access while bypassing network-level security controls. Research has demonstrated that ICMP's lack of port-based multiplexing makes its data payload field exploitable for covert channels [2], and the MITRE ATT&CK framework documents real-world implementations of ICMP-based C2 by groups deploying tools such as PingPull, Regin, and Cobalt Strike [4].
 
 Despite the growing sophistication of real-world attacks, traditional cybersecurity education often remains theoretical, focusing on vulnerability taxonomies and defense checklists rather than providing students with hands-on experience in both offensive and defensive operations. This gap between classroom knowledge and practical capability motivates the development of a controlled, reproducible attack-defense laboratory environment where students can experience the full lifecycle of a cyberattack — from reconnaissance through exploitation to data exfiltration — and simultaneously implement, test, and iteratively improve defensive countermeasures.
 
@@ -116,7 +116,7 @@ Key properties that make eBPF ideal for security monitoring include:
 
 - **Kernel-space execution**: eBPF programs run in the kernel, providing visibility into all syscalls with zero context-switch overhead. This makes them impossible to evade from userspace.
 - **Safety guarantees**: The eBPF verifier statically analyzes every program before loading, ensuring no unbounded loops, out-of-bounds memory access, or kernel crashes.
-- **Active response capability**: Since Linux 5.3, the `bpf_send_signal()` helper allows eBPF programs to send signals (including SIGKILL) to the current process directly from kernel space, enabling real-time threat termination without userspace round-trips [6].
+- **Active response capability**: Since Linux 5.3, the `bpf_send_signal()` helper allows eBPF programs to send arbitrary signals (including SIGKILL) to the current process directly from kernel space, enabling real-time threat termination without userspace round-trips [6].
 - **Tracepoint hooks**: eBPF programs can attach to static tracepoints at syscall entry points (`sys_enter_*`), firing before the syscall handler executes. This enables preemptive detection — the malicious operation can be blocked before it completes.
 
 This project attaches eBPF programs to six tracepoints: `sys_enter_memfd_create`, `sys_enter_execve`, `sys_enter_socket`, `sys_enter_connect`, `sys_enter_dup2`, and `sys_enter_dup3`.
@@ -131,7 +131,7 @@ This project deploys a low-interaction honeypot that emulates an SSH server on p
 
 The Advanced Encryption Standard (AES) in Counter (CTR) mode is a symmetric encryption scheme standardized by NIST [8]. AES-256-CTR operates as a stream cipher: it generates a pseudorandom keystream by encrypting successive counter values with AES-256, then XORs the keystream with the plaintext. Key properties include:
 
-- **Semantic security**: With a random initialization vector (IV) per message, identical plaintexts produce different ciphertexts, preventing pattern analysis.
+- **IND-CPA security**: With a random initialization vector (IV) per message, identical plaintexts produce different ciphertexts, preventing pattern analysis.
 - **No padding required**: CTR mode produces ciphertext of the same length as the plaintext, making it ideal for network protocols with size constraints.
 - **Parallelizable**: Counter blocks are independent, allowing hardware-accelerated encryption.
 
@@ -333,13 +333,13 @@ The project successfully implements 7 MITRE ATT&CK attack techniques and 7 corre
 
 [1] IBM Security, "Cost of a Data Breach Report 2024," IBM Corporation, 2024. Available: https://www.ibm.com/reports/data-breach
 
-[2] K. Wilhoit, "Dissecting the ICMP Protocol and Its Use in Tunneling and Exfiltration," *Trend Micro Research*, 2013. Available: https://www.trendmicro.com/vinfo/us/threat-encyclopedia/web-attack/137/
+[2] A. Singh, O. Nordstrom, C. Lu, and A. L. N. Reddy, "Malicious ICMP Tunneling: Defense against the Vulnerability," in *ACISP 2003*, Lecture Notes in Computer Science, vol. 2727, Springer, 2003. DOI: 10.1007/3-540-45067-X_20
 
-[3] E. M. Hutchins, M. J. Cloppert, and R. M. Amin, "Intelligence-Driven Computer Network Defense Informed by Analysis of Adversary Campaigns and Intrusion Kill Chains," in *Proceedings of the 6th International Conference on Information Warfare and Security*, Lockheed Martin Corporation, 2011.
+[3] E. M. Hutchins, M. J. Cloppert, and R. M. Amin, "Intelligence-Driven Computer Network Defense Informed by Analysis of Adversary Campaigns and Intrusion Kill Chains," in *Leading Issues in Information Warfare & Security Research*, vol. 1, no. 1, pp. 1-14, Lockheed Martin Corporation, 2011.
 
-[4] B. Strom, A. Applebaum, D. Miller, K. Nickels, A. Pennington, and C. Thomas, "MITRE ATT&CK: Design and Philosophy," MITRE Corporation, Technical Report MP-19-01075, 2020. Available: https://attack.mitre.org
+[4] B. Strom, A. Applebaum, D. Miller, K. Nickels, A. Pennington, and C. Thomas, "MITRE ATT&CK: Design and Philosophy," MITRE Corporation, 2020. Available: https://attack.mitre.org/docs/ATTACK_Design_and_Philosophy_March_2020.pdf
 
-[5] J. Corbet, "A thorough introduction to eBPF," *LWN.net*, December 2017. Available: https://lwn.net/Articles/740157/
+[5] M. Fleming, "A thorough introduction to eBPF," *LWN.net*, December 2017. Available: https://lwn.net/Articles/740157/
 
 [6] Y. Song, "bpf: implement bpf_send_signal helper," Linux Kernel Commit, 2019. Available: https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=8b401f9ed244
 
