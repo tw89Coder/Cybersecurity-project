@@ -363,7 +363,7 @@ sudo ip addr add 172.22.137.15/20 dev eth0
 
 **Why this is insufficient alone**: IP-based blocking is inherently limited. The blue team must also deploy behavior-based detection (eBPF) that operates independently of source IP.
 
-**MITRE ATT&CK**: T1036 (Masquerading)
+**MITRE ATT&CK**: Defense Evasion (no specific ATT&CK technique — IP aliasing is a general network-level evasion)
 
 ---
 
@@ -403,7 +403,7 @@ SSTI → os.popen → base64 -d | python3 → fork()
 
 **Listener**: Built-in TCP listener (`select()`-based) that catches the incoming reverse shell connection on port 4444.
 
-**MITRE ATT&CK**: T1059.006, T1071.001
+**MITRE ATT&CK**: T1059.006, T1095, T1571
 
 **Impact**: Full interactive shell access that completely bypasses eBPF v1 detection.
 
@@ -498,7 +498,7 @@ Both channels use a shared reassembly engine with:
 | Script | Purpose | MITRE ATT&CK |
 |--------|---------|--------------|
 | `recon.sh` | Automated nmap SYN scan + service version detection | T1595 |
-| `ip_switch.sh` | IP alias management (add/remove/status) for MDR bypass | T1036 |
+| `ip_switch.sh` | IP alias management (add/remove/status) for MDR bypass | Defense Evasion |
 | `deploy_agent.sh` | Generates base64-encoded deployment command for exfil agent | T1059 |
 | `post_exploit.sh` | Post-exploitation enumeration (whoami, uname, ip addr, netstat) and persistence via crontab | T1082, T1053.003 |
 
@@ -803,9 +803,8 @@ The demonstration is structured as a 7-round engagement that illustrates the adv
 | T1620 | Reflective Code Loading | `memfd_create` → `execve` from `/proc/pid/fd` |
 | T1027 | Obfuscated Files or Information | Double Base64 + AES-256-CTR encryption |
 | T1140 | Deobfuscate/Decode | `base64 -d` pipeline in shell |
-| T1095 | Non-Application Layer Protocol | ICMP echo request covert C2 channel |
-| T1071.001 | Application Layer Protocol: Web | TCP reverse shell |
-| T1036 | Masquerading | IP alias to bypass network-level blocking |
+| T1095 | Non-Application Layer Protocol | ICMP covert C2 + TCP reverse shell (raw TCP) |
+| T1571 | Non-Standard Port | C2 and reverse shell on port 4444 |
 | T1048.003 | Exfiltration Over Alternative Protocol | DNS/ICMP data exfiltration |
 | T1005 | Data from Local System | Exfil agent collects passwd, SSH keys, history |
 | T1053.003 | Scheduled Task/Job: Cron | Crontab persistence (post_exploit.sh) |
@@ -821,7 +820,7 @@ The demonstration is structured as a 7-round engagement that illustrates the adv
 | T1059 | Execution from `/proc/fd` | `sys_enter_execve` filename pattern match | v1 |
 | T1095 | Raw ICMP Socket | `sys_enter_socket(AF_INET, SOCK_RAW, ICMP)` | v1 |
 | T1070 | Indicator Removal | `/proc/*/exe` cold-start scan for memfd processes | v1 |
-| T1071.001 | Suspect Port Connect | `sys_enter_connect` port check | v2 |
+| T1571 | Non-Standard Port Connect | `sys_enter_connect` port check | v2 |
 | T1059.006 | Reverse Shell fd Hijack | `sys_enter_dup2/dup3` bitmask tracking | v2 |
 | T1595 | Active Scanning | Honeypot trap on port 2222 | Network |
 | -- | Known-Bad IP Blocking | `iptables -I INPUT 1 -s IP -j DROP` | Network |

@@ -104,9 +104,8 @@ The MITRE ATT&CK (Adversarial Tactics, Techniques, and Common Knowledge) framewo
 | Execution | T1059.006 | Command and Scripting Interpreter: Python | memfd loader, reverse shell, C2 agent |
 | Defense Evasion | T1620 | Reflective Code Loading | memfd_create + execve from /proc/pid/fd |
 | Defense Evasion | T1027 | Obfuscated Files or Information | Base64 encoding + AES-256-CTR encryption |
-| Defense Evasion | T1036 | Masquerading | IP alias to bypass network-level blocking |
-| Command and Control | T1095 | Non-Application Layer Protocol | ICMP echo request covert channel |
-| Command and Control | T1071.001 | Application Layer Protocol: Web | TCP reverse shell |
+| Command and Control | T1095 | Non-Application Layer Protocol | ICMP covert channel + TCP reverse shell |
+| Command and Control | T1571 | Non-Standard Port | C2 and reverse shell on port 4444 |
 | Exfiltration | T1048.003 | Exfiltration Over Alternative Protocol | DNS/ICMP data exfiltration |
 
 ### 2.3 Extended Berkeley Packet Filter (eBPF)

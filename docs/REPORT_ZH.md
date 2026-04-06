@@ -654,8 +654,7 @@ blue_mdr_network.py → soc_events.jsonl ──────┤
 | T1027 | Obfuscated Files or Information | 雙層 Base64 + AES-256-CTR 加密 | `red_attacker.py` |
 | T1140 | Deobfuscate/Decode | base64 -d pipeline | `red_attacker.py` |
 | T1095 | Non-Application Layer Protocol | ICMP echo request C2 channel (AES-256-CTR) | `red_attacker.py` |
-| T1071.001 | Application Layer Protocol | TCP 反向 Shell | `red_reverse_shell.py` |
-| T1036 | Masquerading | ICMP 偽裝為正常 ping 流量 / IP 別名偽裝 | `red_attacker.py`, `ip_switch.sh` |
+| T1571 | Non-Standard Port | C2 和反向 Shell 使用 port 4444 | `red_reverse_shell.py` |
 | T1053.003 | Scheduled Task: Cron | crontab 持久化反向 Shell | post-exploitation |
 | T1082 | System Information Discovery | whoami, uname -a, id | `post_exploit.sh` |
 | T1005 | Data from Local System | 敏感資料蒐集 (/etc/passwd, SSH keys) | `exfil_agent.py` |
@@ -671,7 +670,7 @@ blue_mdr_network.py → soc_events.jsonl ──────┤
 | T1620 | Reflective Code Loading | `sys_enter_memfd_create` | v1 | `blue_ebpf_mdr.py` |
 | T1059 | Command Execution from /proc/fd | `sys_enter_execve` | v1 | `blue_ebpf_mdr.py` |
 | T1095 | Non-App Layer Protocol | `sys_enter_socket` (RAW ICMP) | v1 | `blue_ebpf_mdr.py` |
-| T1071.001 | Suspect Port Connect | `sys_enter_connect` | v2 | `blue_ebpf_mdr_v2.py` |
+| T1571 | Non-Standard Port Connect | `sys_enter_connect` | v2 | `blue_ebpf_mdr_v2.py` |
 | T1059.006 | Reverse Shell fd Hijack | `sys_enter_dup2` / `sys_enter_dup3` | v2 | `blue_ebpf_mdr_v2.py` |
 | T1070 | Indicator Removal | `/proc/*/exe` 冷啟動掃描 memfd 程序 | v1/v2 | `blue_ebpf_mdr*.py` |
 
@@ -724,12 +723,12 @@ blue_mdr_network.py → soc_events.jsonl ──────┤
 | 工具 | 檔案路徑 | 用途 | MITRE ATT&CK |
 |------|---------|------|-------------|
 | Fileless ICMP C2 | `red_team/red_attacker.py` | 主攻擊：SSTI → memfd → AES-256-CTR ICMP C2 | T1190, T1620, T1095, T1027 |
-| TCP Reverse Shell | `red_team/red_reverse_shell.py` | eBPF v1 繞過：TCP 反向 Shell | T1059.006, T1071.001 |
+| TCP Reverse Shell | `red_team/red_reverse_shell.py` | eBPF v1 繞過：TCP 反向 Shell | T1059.006, T1095, T1571 |
 | WAF Bypass Exploit | `red_team/exploit.py` | 備用攻擊：Base64 + ${IFS} WAF bypass | T1190, T1027 |
 | Exfil Agent | `red_team/exfil_agent.py` | 靶機端：資料蒐集 + DNS/ICMP 外傳 | T1005, T1048.003 |
 | Exfil Listener | `red_team/exfil_listener.py` | 攻擊機端：DNS/ICMP 資料接收器 | T1048.003 |
 | Recon Script | `red_team/recon.sh` | nmap 自動化偵察 | T1595 |
-| IP Switch | `red_team/ip_switch.sh` | IP alias 管理（繞過網路 MDR） | T1036 |
+| IP Switch | `red_team/ip_switch.sh` | IP alias 管理（繞過網路 MDR） | Defense Evasion |
 | Deploy Agent | `red_team/deploy_agent.sh` | 一鍵生成 exfil agent 部署指令 | T1059.006 |
 | Post-Exploit | `red_team/post_exploit.sh` | 後滲透情報蒐集 | T1082 |
 
