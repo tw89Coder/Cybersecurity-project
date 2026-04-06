@@ -168,7 +168,8 @@ reverse_shell.py             pty.spawn
 | T1620 | Reflective Code Loading | `memfd_create` → `execve` |
 | T1027 | Obfuscation | Double Base64 + AES-256-CTR |
 | T1095 | Non-App Layer Protocol | ICMP covert C2 |
-| T1071.001 | Application Layer Protocol | TCP reverse shell |
+| T1095 | Non-Application Layer Protocol | TCP reverse shell (raw TCP, port 4444) |
+| T1571 | Non-Standard Port | C2 on port 4444 |
 | T1048.003 | Exfil Over Alternative Protocol | DNS/ICMP exfil |
 
 ### Detection Coverage
@@ -178,7 +179,7 @@ reverse_shell.py             pty.spawn
 | T1620 | Reflective Loading | `sys_enter_memfd_create` | v1 |
 | T1059 | Execution from `/proc/fd` | `sys_enter_execve` | v1 |
 | T1095 | Raw ICMP Socket | `sys_enter_socket` | v1 |
-| T1071.001 | Suspect Port Connect | `sys_enter_connect` | v2 |
+| T1571 | Non-Standard Port Connect | `sys_enter_connect` | v2 |
 | T1059.006 | Reverse Shell fd Hijack | `sys_enter_dup2/dup3` | v2 |
 
 ---

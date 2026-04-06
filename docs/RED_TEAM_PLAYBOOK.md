@@ -180,9 +180,8 @@ exit
 | Execution | T1059.006 | Python Scripting | memfd loader / reverse shell |
 | Defense Evasion | T1620 | Reflective Code Loading | memfd_create → execve /proc/fd |
 | Defense Evasion | T1027 | Obfuscation (Base64 + AES-256-CTR) | payload 編碼與加密 |
-| Defense Evasion | T1036 | Masquerading (IP 切換) | IP alias 繞過 MDR |
-| Command & Control | T1095 | Non-App Layer Protocol (ICMP) | Phase 2: ICMP C2 |
-| Command & Control | T1071.001 | App Layer Protocol (TCP) | Phase 5: reverse shell |
+| Command & Control | T1095 | Non-App Layer Protocol | Phase 2: ICMP C2 + Phase 5: TCP reverse shell |
+| Command & Control | T1571 | Non-Standard Port (4444) | Phase 5: reverse shell on port 4444 |
 | Persistence | T1053.003 | Cron Job | Phase 4: crontab |
 | Discovery | T1082 | System Information Discovery | whoami, uname |
 | Collection | T1005 | Data from Local System | exfil_agent 蒐集 |
