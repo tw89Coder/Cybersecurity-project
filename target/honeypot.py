@@ -108,13 +108,18 @@ def handle_client(conn, addr, log_path, verbose):
 
 
 def main():
+    # Default trap.log path: project root (same location regardless of CWD)
+    _script_dir = os.path.dirname(os.path.abspath(__file__))
+    _project_root = os.path.dirname(_script_dir)  # target/ → project root
+    _default_log = os.path.join(_project_root, 'trap.log')
+
     ap = argparse.ArgumentParser(description='Fake SSH Honeypot')
     ap.add_argument('--port', type=int, default=2222,
                     help='Listen port (default 2222)')
     ap.add_argument('--host', default='0.0.0.0',
                     help='Bind address (default 0.0.0.0)')
-    ap.add_argument('--log', default='trap.log',
-                    help='Log file path (default trap.log)')
+    ap.add_argument('--log', default=_default_log,
+                    help=f'Log file path (default {_default_log})')
     ap.add_argument('--quiet', action='store_true',
                     help='Suppress console output')
     args = ap.parse_args()

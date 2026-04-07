@@ -158,10 +158,15 @@ class TrapLogWatcher:
 # ═══════════════════════════════════════════════════════════════
 
 def main():
+    # Default trap.log path: project root (matches honeypot.py default)
+    _script_dir = os.path.dirname(os.path.abspath(__file__))
+    _project_root = os.path.dirname(_script_dir)  # blue_team/ → project root
+    _default_log = os.path.join(_project_root, 'trap.log')
+
     ap = argparse.ArgumentParser(
         description='Blue Team Network MDR (Honeypot + iptables)')
-    ap.add_argument('--log', default='trap.log',
-                    help='Path to trap.log (default: trap.log)')
+    ap.add_argument('--log', default=_default_log,
+                    help=f'Path to trap.log (default: {_default_log})')
     ap.add_argument('--interval', type=float, default=1.0,
                     help='Poll interval in seconds (default: 1.0)')
     ap.add_argument('--cleanup', action='store_true',
