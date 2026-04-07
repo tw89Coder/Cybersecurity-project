@@ -2,7 +2,7 @@
 """
 red_reverse_shell.py - TCP Reverse Shell via SSTI (eBPF v1 Bypass)
 ================================================================================
-MITRE ATT&CK : T1059.006  T1190  T1071.001
+MITRE ATT&CK : T1059.006  T1190  T1095  T1571
 Kill Chain    : Phase 5 — Evasion after Blue Team Detection
 
 WHY THIS BYPASSES eBPF v1:
