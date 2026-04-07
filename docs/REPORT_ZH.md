@@ -137,7 +137,7 @@ Rule 插在 INPUT chain 的 position 1（最高優先），確保比任何現有
 
 Flask 用 Jinja2 當 template engine，Jinja2 會在 `{{ }}` 裡面執行 Python expression。
 
-**漏洞成因 — 兩步合成的錯誤** (CWE-1336):
+**漏洞成因 — 兩步合成的錯誤** (CWE-1336 / CWE-94):
 
 ```python
 # Step 1: 用 Python f-string 把 user input 直接塞進 template source

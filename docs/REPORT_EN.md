@@ -43,7 +43,7 @@ The rest of this report walks through the technical details of each component --
 
 ### 3.1 Vulnerable Flask Application (`target/target_app.py`)
 
-This is a web-based "Diagnostic Portal" that accepts user queries on the `/diag` endpoint (port 9999). The vulnerability here is Server-Side Template Injection (SSTI) via Jinja2 (CWE-1336).
+This is a web-based "Diagnostic Portal" that accepts user queries on the `/diag` endpoint (port 9999). The vulnerability here is Server-Side Template Injection (SSTI) via Jinja2 (CWE-1336 / CWE-94).
 
 The root cause is a two-step composition flaw:
 

