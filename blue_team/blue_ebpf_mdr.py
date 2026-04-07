@@ -2,7 +2,7 @@
 """
 blue_ebpf_mdr.py - eBPF Real-time Fileless Malware Detection & Response
 ================================================================================
-MITRE ATT&CK Detection: T1620 T1059 T1095 T1070
+MITRE ATT&CK Detection: T1620 T1059 T1095
 Kill Chain              : Defense across Phases 2–6
 
 PRINCIPLE 1 — What is eBPF?

@@ -92,7 +92,7 @@ def handle_client(conn, addr, log_path, verbose):
             pass
 
     # Log to trap.log — format parsed by blue_mdr_network.py
-    client_str = client_data.decode(errors='replace').strip()[:100]
+    client_str = client_data.decode(errors='replace').replace('\n', ' ').replace('\r', ' ').strip()[:100]
     log_line = f"[{ts}] Attacker IP: {ip} Port: {port} Data: {client_str}\n"
 
     try:

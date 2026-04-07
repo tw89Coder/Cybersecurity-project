@@ -2,7 +2,7 @@
 # ============================================
 # Red Team - IP Alias 管理
 # 用途: 被 MDR 封鎖後切換 IP 繼續攻擊
-# MITRE ATT&CK: T1036 (Masquerading)
+# MITRE ATT&CK: Defense Evasion (IP alias — no specific technique ID)
 # ============================================
 
 PRIMARY_IP="172.22.137.14"
