@@ -1,8 +1,6 @@
 # Exfiltration 隱蔽通道 Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
-**Goal:** 建立 DNS/ICMP 隱蔽通道 exfiltration 系統，完全繞過藍軍 tshark (`tcp port 9999`) 監控，將靶機資料外傳至攻擊機。
+建立 DNS/ICMP 隱蔽通道 exfiltration 系統，繞過藍軍 tshark (`tcp port 9999`) 監控，把靶機資料外傳到攻擊機。
 
 **Architecture:** 兩個 Python 腳本 — `exfil_agent.py` 部署到靶機蒐集並透過 DNS/ICMP 發送資料，`exfil_listener.py` 在 WSL2 接收、重組、安全儲存。DNS 為主通道（~50 bytes/query），ICMP 為備用（~10 bytes/ping）。Agent 自動偵測可用通道。
 

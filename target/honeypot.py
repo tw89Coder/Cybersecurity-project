@@ -1,37 +1,15 @@
 #!/usr/bin/env python3
 """
-honeypot.py - Fake SSH Honeypot (Cyber Deception)
-================================================================================
-MITRE ATT&CK : T1595 (Active Scanning — triggers detection)
-Defence       : Cyber Deception / Honeypot
-Kill Chain    : Disrupts Phase 1 Reconnaissance
+honeypot.py - Fake SSH Honeypot
+MITRE ATT&CK: T1595
 
-PRINCIPLE — Why Honeypots Work
--------------------------------
-A honeypot is a decoy service that LOOKS legitimate but exists solely to
-detect unauthorized access.  Any interaction with the honeypot is suspicious
-by definition — legitimate users have no reason to connect.
-
-This honeypot mimics an OpenSSH server on port 2222:
-  1. Sends a realistic SSH version banner (SSH-2.0-OpenSSH_8.9p1)
-  2. Waits briefly for the attacker's client to send data
-  3. Returns a fake "Permission denied" message
-  4. Logs the attacker's IP, timestamp, and any data received to trap.log
-
-The trap.log file is monitored by blue_mdr_network.py, which reads new
-attacker IPs and immediately blocks them with iptables.
-
-Attack scenario:
-  1. Red team runs nmap → discovers port 2222 (looks like SSH)
-  2. Red team connects: nc <TARGET> 2222
-  3. Honeypot logs IP → MDR reads trap.log → iptables DROP
-  4. Red team's IP is now blocked from ALL ports
-  5. Red team must use ip_switch.sh to get a new IP
+Listens on port 2222, sends a fake OpenSSH banner, logs connecting IPs
+to trap.log. Any connection is flagged as suspicious.
+blue_mdr_network.py watches trap.log and auto-blocks logged IPs via iptables.
 
 Usage:
   sudo python3 honeypot.py                    # default port 2222
   sudo python3 honeypot.py --port 2222 --log trap.log
-================================================================================
 """
 import socket
 import threading

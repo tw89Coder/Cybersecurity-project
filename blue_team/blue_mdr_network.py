@@ -1,43 +1,17 @@
 #!/usr/bin/env python3
 """
-blue_mdr_network.py - Network-Level MDR (Micro Managed Detection & Response)
-================================================================================
-Defence Layer : Network (iptables)
-Complement to : blue_ebpf_mdr.py (kernel-level eBPF)
+blue_mdr_network.py - Network-Level MDR (iptables auto-blocker)
 
-PRINCIPLE — Two-Layer Defense
-------------------------------
-This project implements defense-in-depth with two independent layers:
+Watches trap.log (written by honeypot.py) for new attacker IPs
+and immediately blocks them with iptables DROP rules.
+Complements the kernel-level eBPF detection in blue_ebpf_mdr.py.
 
-  Layer 1 — Network (this file):
-    Honeypot on port 2222 logs attacker IPs to trap.log.
-    This MDR daemon watches trap.log, extracts new IPs, and blocks them
-    with iptables DROP rules.  This prevents the attacker from reaching
-    ANY service on the machine.
-
-  Layer 2 — Kernel (blue_ebpf_mdr.py / v2):
-    eBPF hooks on syscalls detect malicious behavior (memfd_create,
-    reverse shells) regardless of source IP.  This catches attackers
-    who bypass the network layer (e.g., via IP alias).
-
-Together they form: Network blocks known-bad IPs, eBPF blocks bad behavior.
-
-HOW IT WORKS:
--------------
-  1. Honeypot (target/honeypot.py) listens on port 2222
-  2. Attacker connects → honeypot logs "Attacker IP: x.x.x.x" to trap.log
-  3. This MDR daemon detects the new log entry (polling trap.log)
-  4. Runs: iptables -I INPUT 1 -s <IP> -j DROP
-  5. Attacker is blocked from ALL ports immediately
-
-The iptables rule is inserted at position 1 (highest priority), ensuring
-it takes effect before any ACCEPT rules.
+Flow: honeypot logs IP -> this daemon reads trap.log -> iptables -I INPUT -s IP -j DROP
 
 Usage:
   sudo python3 blue_mdr_network.py                      # default trap.log
   sudo python3 blue_mdr_network.py --log /path/trap.log
   sudo python3 blue_mdr_network.py --cleanup             # remove all rules on exit
-================================================================================
 """
 import os
 import sys

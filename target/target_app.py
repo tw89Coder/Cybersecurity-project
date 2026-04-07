@@ -1,56 +1,14 @@
 #!/usr/bin/env python3
 """
 target_app.py - Vulnerable Flask Diagnostic API
-================================================================================
-Vulnerability : Server-Side Template Injection (SSTI) via Jinja2
-MITRE ATT&CK  : T1190 (Exploit Public-Facing Application)
-Kill Chain     : Phase 3 — Delivery / Initial Access
+MITRE ATT&CK: T1190
 
-PRINCIPLE — Why SSTI Works
---------------------------
-Flask uses Jinja2 as its template engine.  Jinja2 evaluates expressions inside
-{{ }} delimiters in a sandboxed-but-escapable Python context.
-
-The vulnerability arises from a two-step composition mistake:
-
-  Step 1 — Python f-string interpolation
-    template = f"Query: {user_input}"
-    At this point user_input is literally pasted into the string.
-    If user_input = "{{ 7*7 }}", the result is the string:
-        "Query: {{ 7*7 }}"
-
-  Step 2 — Jinja2 rendering
-    render_template_string(template)
-    Jinja2 now sees {{ 7*7 }} as a live expression and evaluates it → "49"
-
-The SAFE pattern passes user data as a Jinja2 *variable*, not part of the
-template source:
-    render_template_string("Query: {{ q }}", q=user_input)
-Here Jinja2 treats q as data, never as code.
-
-SSTI → RCE Escalation Path
----------------------------
-Jinja2 expressions can traverse Python's object model:
-    config                               → Flask config object
-    .__class__                           → <class 'flask.config.Config'>
-    .__init__                            → bound method (Config.__init__)
-    .__globals__                         → dict of module-level globals
-    ['os']                               → the 'os' module (imported by flask.config)
-    .popen('cmd')                        → subprocess execution → RCE
-
-This works because:
-  1. Python's introspection allows ANY object to reach its class, then the
-     module globals of any method defined in that module.
-  2. Flask's config module imports 'os' at module level, so 'os' lives in
-     Config.__init__.__globals__.
-  3. Jinja2's sandbox restricts *attribute names starting with _* by default,
-     but config.__class__ is not underscore-prefixed — the sandbox checks
-     are on the attribute NAME, not on the resolution chain.
-
-Impact: Full Remote Code Execution with the privileges of the Flask process.
+Intentionally vulnerable Flask app with an SSTI (Server-Side Template Injection)
+flaw in the /diag endpoint. User input is interpolated into the template string
+via f-string before render_template_string(), allowing Jinja2 expression injection
+that escalates to RCE through config.__class__.__init__.__globals__['os'].popen().
 
 Usage: sudo python3 target_app.py [--port PORT]
-================================================================================
 """
 from flask import Flask, request, render_template_string
 import argparse

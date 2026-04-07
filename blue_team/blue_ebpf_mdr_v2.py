@@ -1,36 +1,14 @@
 #!/usr/bin/env python3
 """
 blue_ebpf_mdr_v2.py - eBPF MDR v2: Reverse Shell Detection Upgrade
-================================================================================
-Upgrades from v1 (blue_ebpf_mdr.py):
+MITRE ATT&CK Detection: T1620, T1059, T1095
 
-  v1 hooks (retained):
-    1. sys_enter_memfd_create  → fileless staging
-    2. sys_enter_execve        → execution from /proc/fd
-    3. sys_enter_socket        → raw ICMP covert channel
+Extends v1 (blue_ebpf_mdr.py) with two new hooks to catch TCP reverse shells:
 
-  v2 NEW hooks:
-    4. sys_enter_connect       → outbound TCP to suspicious ports
-    5. sys_enter_dup2          → fd 0/1/2 hijacking (reverse shell pattern)
-
-WHY v2 IS NEEDED:
------------------
-v1 only detects fileless malware that uses memfd_create + ICMP raw sockets.
-A standard TCP reverse shell (fork → connect → dup2 → pty.spawn) bypasses
-ALL v1 hooks because it never calls memfd_create or opens a raw socket.
-
-v2 catches this with two complementary strategies:
-
-  Strategy 1 — Suspicious Port Detection (Hook 4):
-    Monitor connect() calls.  If the destination port matches a known
-    C2/shell port (4444, 4445, 5555, etc.), alert and optionally kill.
-    Fast detection at connection time.
-
-  Strategy 2 — Reverse Shell Pattern Detection (Hook 5):
-    Track dup2() calls per PID.  When a single process redirects all
-    three standard file descriptors (stdin=0, stdout=1, stderr=2),
-    this is the classic reverse shell pattern.  Alert and optionally kill.
-    Catches reverse shells on ANY port, even 80/443.
+  v1 hooks (retained): memfd_create, execve from /proc/fd, raw ICMP socket
+  v2 new hooks:
+    4. sys_enter_connect  -> outbound TCP to suspicious ports
+    5. sys_enter_dup2     -> fd 0/1/2 hijacking (reverse shell pattern)
 
 Requires: Linux >= 5.3, BCC (python3-bpfcc), root
 
@@ -38,7 +16,6 @@ Usage:
   sudo python3 blue_ebpf_mdr_v2.py                          # monitor only
   sudo python3 blue_ebpf_mdr_v2.py --kill                    # detect + kill
   sudo python3 blue_ebpf_mdr_v2.py --kill --suspect-ports 4444,8080
-================================================================================
 """
 import os
 import sys

@@ -1,100 +1,17 @@
 #!/usr/bin/env python3
 """
-blue_ebpf_mdr.py - eBPF Real-time Fileless Malware Detection & Response
-================================================================================
-MITRE ATT&CK Detection: T1620 T1059 T1095
-Kill Chain              : Defense across Phases 2–6
+blue_ebpf_mdr.py - eBPF Real-time Fileless Malware Detection & Response (v1)
+MITRE ATT&CK Detection: T1620, T1059, T1095
 
-PRINCIPLE 1 — What is eBPF?
------------------------------
-eBPF (extended Berkeley Packet Filter) is a technology that allows sandboxed
-programs to run inside the Linux kernel WITHOUT modifying kernel source code
-or loading kernel modules.
+Uses eBPF tracepoints to hook syscalls and detect fileless malware in real-time.
+Can optionally auto-kill suspicious processes via bpf_send_signal(SIGKILL).
 
-Key properties:
-  - eBPF programs are written in a restricted C dialect
-  - They are compiled to eBPF bytecode, then JIT-compiled to native machine
-    code by the kernel for near-native execution speed
-  - The kernel VERIFIER statically analyzes every program before loading:
-      * No unbounded loops (must have provable termination)
-      * No out-of-bounds memory access
-      * No arbitrary pointer dereference
-      * Stack size limited to 512 bytes
-  - This guarantees that an eBPF program CANNOT crash or hang the kernel
+Hooks:
+  1. sys_enter_memfd_create  -> fileless staging detection
+  2. sys_enter_execve        -> execution from /proc/<pid>/fd/* (memfd)
+  3. sys_enter_socket        -> raw ICMP socket (covert channel indicator)
 
-Why eBPF is ideal for security monitoring:
-  - Runs in kernel space → zero context-switch overhead
-  - Sees ALL syscalls before they execute (tracepoints on sys_enter_*)
-  - Can read process metadata (PID, UID, comm) from kernel task_struct
-  - Can actively respond: bpf_send_signal() kills processes from kernel space
-  - Cannot be evaded by userspace anti-debugging or rootkit techniques
-    (the hook is in the kernel, not in any userspace library)
-
-PRINCIPLE 2 — Tracepoints vs Kprobes
---------------------------------------
-Linux offers two syscall instrumentation mechanisms:
-
-  Tracepoint (sys_enter_*, sys_exit_*):
-    - Static instrumentation points compiled into the kernel
-    - Stable ABI across kernel versions
-    - Fire at the ENTRY or EXIT of a syscall
-    - sys_enter_memfd_create fires BEFORE memfd_create executes
-      → we can kill the process before the fd is even created
-
-  Kprobe (dynamic):
-    - Can hook ANY kernel function at runtime
-    - Less stable (function signatures change between kernel versions)
-    - More flexible but more fragile
-
-We use TRACEPOINTS because:
-  1. They are stable across kernel 5.x–6.x
-  2. sys_enter_* fires BEFORE the syscall → we can preemptively kill
-  3. BCC provides clean TRACEPOINT_PROBE() macros
-
-PRINCIPLE 3 — bpf_send_signal(SIGKILL)
-----------------------------------------
-Available since Linux 5.3.  This BPF helper sends a signal to the CURRENT
-task (the process that triggered the tracepoint).
-
-Why this is more effective than userspace kill():
-  1. No userspace round-trip: the signal is delivered within the kernel,
-     during the syscall entry path, BEFORE the syscall handler runs
-  2. The process is killed before memfd_create/execve/socket completes
-  3. There is no race condition: between detection and response, the
-     process cannot execute any instructions (it's in kernel mode)
-  4. Userspace kill() requires: kernel → userspace event → Python handler
-     → kill() syscall → kernel delivery.  This adds milliseconds of
-     latency during which the malware could complete its operation.
-
-PRINCIPLE 4 — Detection Strategy
-----------------------------------
-We hook three syscall entry points and use correlation:
-
-  Hook 1: memfd_create (syscall 319)
-    WHY: memfd_create has very few legitimate uses (Chrome's IPC, some
-    JIT engines).  In a server context, it's a strong fileless-malware
-    indicator.  We record the PID for later correlation.
-
-  Hook 2: execve with /proc/<pid>/fd/* path
-    WHY: Normal execve targets files on disk (/usr/bin/python3).
-    Executing from /proc/<pid>/fd/* means the binary lives only in
-    memory (anonymous fd from memfd_create).  This is the "smoking gun"
-    for fileless execution.
-    HOW: We read the filename argument, check prefix "/proc/" and
-    scan for substring "/fd/" within the first 20 characters.
-
-  Hook 3: socket(AF_INET, SOCK_RAW, IPPROTO_ICMP)
-    WHY: Raw ICMP sockets are used by ping(1) and network diagnostics.
-    A process that ALSO called memfd_create and creates a raw ICMP
-    socket is almost certainly a fileless C2 agent using ICMP as a
-    covert channel.
-    CORRELATION: We check memfd_pids hash map — if the current PID
-    or its parent PID was recorded, we have HIGH CONFIDENCE of malware.
-
-  Combined detection (multi-indicator):
-    memfd_create alone       → HIGH severity (kill if --kill)
-    execve from /proc/fd     → CRITICAL severity (kill if --kill)
-    memfd + ICMP socket      → CRITICAL + CORRELATED (always kill if --kill)
+Multi-indicator correlation: memfd + ICMP raw socket = high-confidence C2 agent.
 
 Requires: Linux >= 5.3, BCC (python3-bpfcc), root
 
@@ -102,7 +19,6 @@ Usage:
   sudo python3 blue_ebpf_mdr.py             # monitor only
   sudo python3 blue_ebpf_mdr.py --kill       # detect + auto-kill
   sudo python3 blue_ebpf_mdr.py --kill --whitelist 1234,5678
-================================================================================
 """
 import os
 import sys

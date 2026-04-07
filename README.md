@@ -1,7 +1,7 @@
 # Enterprise Attack-Defense Lab
 
 > Cyberattack Kill Chain 攻防演練專案
-> A comprehensive red-blue team exercise based on the Cyberattack Kill Chain framework.
+> Red-blue team exercise built around the Cyberattack Kill Chain framework for a network security course.
 
 ---
 
@@ -69,24 +69,20 @@ cd <repo>
 bash setup_env.sh
 ```
 
-**Dual-machine architecture** (setup_env.sh auto-detects WSL2):
+We use two machines. `setup_env.sh` auto-detects whether you're on WSL2 or native Linux and installs the right packages.
 
 | Machine | Role | OS | eBPF |
 |---------|------|----|------|
 | Lab server | Target + Blue Team | Ubuntu 24.04 (native) | Yes |
 | Student laptop | Red Team (attacker) | Ubuntu 22.04 (WSL2) | Not needed |
 
-```bash
-# Run on BOTH machines:
-git clone https://github.com/<org>/<repo>.git && cd <repo>
-bash setup_env.sh    # auto-detects WSL2, installs appropriate packages
-```
+Run `git clone` + `bash setup_env.sh` on both machines.
 
-### 2. Execution Order / 執行順序
+### 2. Running the Demo / 執行順序
 
-> **Complete Demo**: See [docs/DEMO_FLOW.md](docs/DEMO_FLOW.md) for the full 7-round demo script with detailed commands and expected outputs.
+For the full 7-round walkthrough, check [docs/DEMO_FLOW.md](docs/DEMO_FLOW.md).
 
-**Quick Start (basic 2-scenario test):**
+Here's a quick 2-scenario test:
 
 ```bash
 # Lab machine — Terminal 1: Target (靶機)
@@ -102,10 +98,10 @@ sudo .venv/bin/python3 red_team/red_attacker.py -t <TARGET_IP> -l <ATTACKER_IP>
 # Paste the curl command printed by Terminal 3
 ```
 
-### 3. Expected Results / 預期結果
+### 3. What to Expect / 預期結果
 
-| Scenario | What Happens |
-|----------|-------------|
+| Scenario | Result |
+|----------|--------|
 | Blue team **OFF** | Agent deploys in-memory, C2 shell obtained |
 | Blue team v1 **ON** (`--kill`) | eBPF detects `memfd_create`, kills process before execution |
 | Red team **reverse shell** (v1 bypass) | TCP shell bypasses v1 detection entirely |
@@ -129,31 +125,26 @@ fork()       SSTI POST      connect()        TCP reverse
 reverse_shell.py             pty.spawn
 ```
 
+The main chain (phases 1-6) is the fileless ICMP C2 path. Phase 5b is the evasion variant -- a TCP reverse shell that sidesteps v1 detection but gets caught by v2's `connect()`/`dup2` hooks.
+
 ---
 
-## Technical Highlights / 技術亮點
+## How It Works / 技術說明
 
 ### Red Team / 紅軍
 
-| Technique | Principle | File |
-|-----------|-----------|------|
-| **SSTI** | f-string + `render_template_string` → Jinja2 evaluates `{{ }}` as code | `target/target_app.py` |
-| **Fileless Execution** | `memfd_create` (syscall 319) creates anonymous RAM-only fd; `execve` via `/proc/pid/fd/N` | `red_team/red_attacker.py` |
-| **ICMP Covert C2** | Data hidden in ICMP echo-request payload; AES-256-CTR encrypted via ctypes+OpenSSL; no TCP/UDP | `red_team/red_attacker.py` |
-| **TCP Reverse Shell** | `fork` → `connect` → `dup2(fd,0/1/2)` → `pty.spawn` — bypasses eBPF v1 | `red_team/red_reverse_shell.py` |
-| **WAF Bypass** | `${IFS}` space evasion + Base64 encoding + backslash obfuscation | `red_team/exploit.py` |
-| **DNS/ICMP Exfil** | Base32-over-DNS and hex-over-ICMP covert exfiltration channels | `red_team/exfil_agent.py` |
+- **SSTI**: The target Flask app uses `render_template_string` with user input, so Jinja2 evaluates `{{ }}` as code. That's our entry point. (`target/target_app.py`)
+- **Fileless execution**: We use `memfd_create` (syscall 319) to create an anonymous fd in RAM, then `execve` through `/proc/pid/fd/N`. Nothing touches disk. (`red_team/red_attacker.py`)
+- **ICMP covert C2**: Commands go in ICMP echo-request payloads, encrypted with AES-256-CTR via ctypes+OpenSSL. No TCP/UDP connections to detect. (`red_team/red_attacker.py`)
+- **TCP reverse shell**: `fork` -> `connect` -> `dup2(fd,0/1/2)` -> `pty.spawn`. This bypasses eBPF v1 since it doesn't use `memfd_create`. (`red_team/red_reverse_shell.py`)
+- **WAF bypass**: `${IFS}` for space evasion, Base64 encoding, backslash obfuscation. (`red_team/exploit.py`)
+- **DNS/ICMP exfil**: Base32-over-DNS and hex-over-ICMP for covert data exfiltration. (`red_team/exfil_agent.py`)
 
 ### Blue Team / 藍軍
 
-| Technique | Principle | File |
-|-----------|-----------|------|
-| **eBPF Syscall Hooks (v1)** | Tracepoints on `memfd_create`, `execve`, `socket` | `blue_team/blue_ebpf_mdr.py` |
-| **Suspect Port Detection (v2)** | `sys_enter_connect` hook checks destination port against configurable list | `blue_team/blue_ebpf_mdr_v2.py` |
-| **Reverse Shell Detection (v2)** | `sys_enter_dup2/dup3` tracks fd 0,1,2 hijacking → confirms shell pattern | `blue_team/blue_ebpf_mdr_v2.py` |
-| **Kernel-Space Kill** | `bpf_send_signal(SIGKILL)` terminates process *before* syscall completes | `blue_team/blue_ebpf_mdr*.py` |
-| **Correlation Detection** | `memfd_create` PID + raw ICMP socket → confirmed fileless C2 | `blue_team/blue_ebpf_mdr.py` |
-| **Cold-Start Scan** | `/proc/*/exe` scan for existing `memfd:` processes at startup | `blue_team/blue_ebpf_mdr*.py` |
+- **eBPF v1**: Hooks `memfd_create`, `execve`, and `socket` tracepoints. Correlates `memfd_create` PID with raw ICMP socket creation to confirm fileless C2. Also does a cold-start `/proc/*/exe` scan for existing `memfd:` processes. (`blue_team/blue_ebpf_mdr.py`)
+- **eBPF v2**: Adds `sys_enter_connect` to check destination ports against a configurable suspect list, plus `sys_enter_dup2/dup3` to track fd 0,1,2 hijacking (the classic reverse shell pattern). (`blue_team/blue_ebpf_mdr_v2.py`)
+- **Kernel-space kill**: Both versions can call `bpf_send_signal(SIGKILL)` to terminate the process *before* the syscall even completes. (`blue_team/blue_ebpf_mdr*.py`)
 
 ---
 
@@ -165,10 +156,10 @@ reverse_shell.py             pty.spawn
 |----|-----------|---------------|
 | T1190 | Exploit Public-Facing App | SSTI injection |
 | T1059.006 | Python Execution | memfd loader + agent + reverse shell |
-| T1620 | Reflective Code Loading | `memfd_create` → `execve` |
+| T1620 | Reflective Code Loading | `memfd_create` -> `execve` |
 | T1027 | Obfuscation | Double Base64 + AES-256-CTR |
 | T1095 | Non-App Layer Protocol | ICMP covert C2 |
-| T1095 | Non-Application Layer Protocol | TCP reverse shell (raw TCP, port 4444) |
+| T1095 | Non-App Layer Protocol | TCP reverse shell (raw TCP, port 4444) |
 | T1571 | Non-Standard Port | C2 on port 4444 |
 | T1048.003 | Exfil Over Alternative Protocol | DNS/ICMP exfil |
 
@@ -184,20 +175,19 @@ reverse_shell.py             pty.spawn
 
 ---
 
-## Reports & Docs / 技術報告與文件
+## Docs / 相關文件
 
-- [Demo Flow / 演練腳本](docs/DEMO_FLOW.md) — Complete 7-round attack-defense demo script
-- [Red Team Playbook](docs/RED_TEAM_PLAYBOOK.md) — Attack playbook with step-by-step commands
-- [Chinese / 中文報告](docs/REPORT_ZH.md) — Kill Chain 各階段原理分析
-- [English Report](docs/REPORT_EN.md) — Full technical analysis
+- [Demo Flow / 演練腳本](docs/DEMO_FLOW.md) -- 7-round attack-defense demo
+- [Red Team Playbook](docs/RED_TEAM_PLAYBOOK.md) -- Step-by-step attack commands
+- [中文報告](docs/REPORT_ZH.md) -- Kill Chain 各階段原理分析
+- [English Report](docs/REPORT_EN.md) -- Full technical analysis
 
 ---
 
 ## Disclaimer / 免責聲明
 
 This project is for **authorized educational and research purposes only**.
-All exercises are conducted in isolated lab environments.
-Do not use these techniques against systems without explicit authorization.
+All exercises run in isolated lab environments. Don't use any of this against systems you don't have explicit permission to test.
 
 本專案僅供**授權教育與研究用途**。所有演練在隔離的 Lab 環境中進行。
 未經明確授權，禁止對任何系統使用這些技術。

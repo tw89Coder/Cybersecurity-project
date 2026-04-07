@@ -1,18 +1,18 @@
 # Enterprise Attack-Defense Lab: Technical Analysis Report
 
-## 1. Executive Summary
+## 1. Introduction
 
-This project implements a comprehensive Cyberattack Kill Chain exercise structured as a multi-round red-blue team engagement. The system spans 15+ components across three functional domains: target infrastructure, red team offensive tooling, and blue team defensive systems.
+This project is a multi-round red-blue team engagement built around the Cyberattack Kill Chain. The system has 15+ components split across three areas: target infrastructure, red team offensive tools, and blue team defenses.
 
 | Domain | Components | Key Capabilities |
 |--------|-----------|-----------------|
-| **Target** | `target_app.py`, `honeypot.py` | SSTI-vulnerable Flask API, fake SSH honeypot on port 2222 |
-| **Red Team** | `red_attacker.py`, `red_reverse_shell.py`, `exploit.py`, `exfil_agent.py`, `exfil_listener.py`, `recon.sh`, `ip_switch.sh`, `deploy_agent.sh`, `post_exploit.sh` | Fileless ICMP C2 (AES-256-CTR), TCP reverse shell, DNS/ICMP exfiltration, WAF bypass, IP aliasing |
-| **Blue Team** | `blue_ebpf_mdr.py` (v1), `blue_ebpf_mdr_v2.py`, `blue_mdr_network.py`, `soc_dashboard.py` | Two-layer defense: network (honeypot + iptables) and kernel (eBPF syscall hooks), real-time SOC dashboard |
+| Target | `target_app.py`, `honeypot.py` | SSTI-vulnerable Flask API, fake SSH honeypot on port 2222 |
+| Red Team | `red_attacker.py`, `red_reverse_shell.py`, `exploit.py`, `exfil_agent.py`, `exfil_listener.py`, `recon.sh`, `ip_switch.sh`, `deploy_agent.sh`, `post_exploit.sh` | Fileless ICMP C2 (AES-256-CTR), TCP reverse shell, DNS/ICMP exfiltration, WAF bypass, IP aliasing |
+| Blue Team | `blue_ebpf_mdr.py` (v1), `blue_ebpf_mdr_v2.py`, `blue_mdr_network.py`, `soc_dashboard.py` | Two-layer defense: network (honeypot + iptables) and kernel (eBPF syscall hooks), real-time SOC dashboard |
 
-The exercise is structured as a **7-round iterative engagement** that demonstrates the adversarial escalation between attack and defense. The red team deploys fileless malware with AES-256-CTR encrypted ICMP C2, adapts when blocked by pivoting to a TCP reverse shell, and exfiltrates data through covert DNS/ICMP channels. The blue team responds with network-layer deception, kernel-level eBPF behavioral detection, and unified SOC visibility.
+The exercise runs across 7 rounds and shows the escalation between attack and defense. The red team deploys fileless malware with AES-256-CTR encrypted ICMP C2, adapts when blocked by pivoting to a TCP reverse shell, and exfiltrates data through covert DNS/ICMP channels. The blue team responds with network-layer deception, kernel-level eBPF behavioral detection, and a unified SOC dashboard.
 
-This report provides in-depth technical analysis of the **underlying principles**, **purpose**, and **impact** of each attack and defense mechanism.
+The rest of this report walks through the technical details of each component -- how it works, why certain design choices were made, and what the limitations are.
 
 ---
 
@@ -33,9 +33,9 @@ This report provides in-depth technical analysis of the **underlying principles*
 └────────────────────────────┘              └──────────────────────────────────┘
 ```
 
-- **Attacker (WSL2)**: Ubuntu 22.04, root privileges for raw ICMP sockets
-- **Lab Server (Native Linux)**: Ubuntu 24.04, runs target services, eBPF defense, and SOC dashboard
-- **Protocols**: ICMP echo request (fileless C2), TCP (reverse shell), DNS/ICMP (exfiltration)
+- Attacker (WSL2): Ubuntu 22.04, root privileges for raw ICMP sockets
+- Lab Server (Native Linux): Ubuntu 24.04, runs target services, eBPF defense, and SOC dashboard
+- Protocols: ICMP echo request (fileless C2), TCP (reverse shell), DNS/ICMP (exfiltration)
 
 ---
 
@@ -43,11 +43,9 @@ This report provides in-depth technical analysis of the **underlying principles*
 
 ### 3.1 Vulnerable Flask Application (`target/target_app.py`)
 
-**Function**: A web-based "Diagnostic Portal" that accepts user queries on the `/diag` endpoint (port 9999).
+This is a web-based "Diagnostic Portal" that accepts user queries on the `/diag` endpoint (port 9999). The vulnerability here is Server-Side Template Injection (SSTI) via Jinja2 (CWE-1336).
 
-**Vulnerability**: Server-Side Template Injection (SSTI) via Jinja2 (CWE-1336).
-
-**Root Cause -- Two-Step Composition Flaw**:
+The root cause is a two-step composition flaw:
 
 ```python
 # Step 1: Python f-string embeds user input into template SOURCE CODE
@@ -59,16 +57,14 @@ render_template_string(template)
 
 If `user_input` contains `{{ 7*7 }}`, the resulting template string is `<pre>Query: {{ 7*7 }}</pre>`, and Jinja2 evaluates `7*7` as the integer `49`.
 
-**Safe Pattern** -- pass user data as a Jinja2 *variable*, not as template source:
+The safe pattern is to pass user data as a Jinja2 variable instead of embedding it in the template source:
 
 ```python
 render_template_string("<pre>Query: {{ q | e }}</pre>", q=user_input)
 # Jinja2 treats q as data, never code; auto-escaping prevents injection
 ```
 
-**SSTI to RCE Escalation Path**:
-
-Jinja2 expressions can traverse Python's object model:
+From SSTI, the attacker can escalate to full RCE by traversing Python's object model:
 
 ```
 config                           → Flask config object
@@ -79,28 +75,19 @@ config                           → Flask config object
   .popen('cmd')                  → subprocess execution → RCE
 ```
 
-**Why this path works**:
-1. Python's **introspection** allows any object to reach its class, then the module globals of any method defined in that module
-2. Flask's `config.py` module has `import os` at the top level, placing `os` in `Config.__init__.__globals__`
-3. Jinja2's sandbox restricts attribute names starting with `_`, but the traversal chain uses `__class__`, `__init__`, `__globals__` -- the sandbox check is on the attribute *name*, not the resolution result
-
-**Impact**: Full Remote Code Execution (RCE) with the Flask process privileges.
+This works because Python's introspection lets any object reach its class and then the module globals of any method defined in that module. Flask's `config.py` has `import os` at the top level, so `os` sits in `Config.__init__.__globals__`. Jinja2's sandbox restricts attribute names starting with `_`, but the traversal uses `__class__`, `__init__`, `__globals__` -- the sandbox checks the attribute name, not what it resolves to. The end result is full RCE with the Flask process privileges.
 
 ### 3.2 SSH Honeypot (`target/honeypot.py`)
 
-**Function**: A low-interaction SSH honeypot listening on port 2222, part of the blue team's cyber deception strategy.
+This is a low-interaction SSH honeypot on port 2222, part of the blue team's deception strategy. The idea is simple: a honeypot is a decoy service that exists solely to detect unauthorized access. Any interaction with it is suspicious because legitimate users have no reason to connect.
 
-**Principle**: A honeypot is a decoy service that exists solely to detect unauthorized access. Any interaction with it is inherently suspicious because legitimate users have no reason to connect.
-
-**Mechanism**:
+How it works:
 1. Sends a realistic `SSH-2.0-OpenSSH_8.9p1 Ubuntu-3ubuntu0.4\r\n` banner (RFC 4253 compliant) that fools nmap service detection (`-sV`)
 2. Waits for the attacker's client hello data (up to 5 seconds)
 3. Returns a fake `Permission denied (publickey,password)` response
 4. Logs the attacker's IP, timestamp, port, and client data to `trap.log`
 
-**Integration**: The `trap.log` file is continuously monitored by `blue_mdr_network.py`, which extracts attacker IPs and immediately blocks them via iptables. This creates a seamless detection-to-response pipeline.
-
-**Impact**: Zero false-positive detection -- every connection to port 2222 is, by definition, unauthorized.
+The `trap.log` file is continuously monitored by `blue_mdr_network.py`, which extracts attacker IPs and immediately blocks them via iptables. This gives the blue team a seamless detection-to-response pipeline. Every connection to port 2222 is by definition unauthorized, so there are effectively zero false positives.
 
 ---
 
@@ -108,30 +95,26 @@ config                           → Flask config object
 
 ### 4.1 Phase 1: Reconnaissance
 
-**Tools**: `recon.sh`, manual nmap
-
-**Action**: Identify target services and map the attack surface.
+Using `recon.sh` and manual nmap, the attacker identifies target services and maps the attack surface:
 
 ```bash
 bash red_team/recon.sh <TARGET_IP>
 # Equivalent to: nmap -p 2000-10000 -sV <TARGET_IP>
 ```
 
-**Key Discoveries**:
-- Port 2222: SSH banner (honeypot -- triggers MDR IP block if connected)
-- Port 9999: Diagnostic API (Flask SSTI vulnerability, the real target)
+The scan reveals:
+- Port 2222: SSH banner (the honeypot -- connecting here triggers an MDR IP block)
+- Port 9999: Diagnostic API (the Flask SSTI vulnerability, which is the real target)
 
-**MITRE ATT&CK**: T1595 (Active Scanning)
+MITRE ATT&CK: T1595 (Active Scanning)
 
-**Impact**: Confirms the attack vector and maps the target infrastructure. If the attacker connects to port 2222, their IP is logged and blocked by the network MDR.
+If the attacker connects to port 2222 during recon, their IP gets logged and blocked by the network MDR.
 
 ---
 
 ### 4.2 Phase 2: Weaponization and Delivery -- Fileless ICMP C2
 
-**Tool**: `red_attacker.py`
-
-**Action**: Construct and deliver an SSTI payload that achieves fileless RCE with an AES-256-CTR encrypted ICMP C2 channel.
+Using `red_attacker.py`, the attacker constructs and delivers an SSTI payload that achieves fileless RCE with an AES-256-CTR encrypted ICMP C2 channel.
 
 #### 4.2.1 SSTI Payload Delivery Chain (4 Stages)
 
@@ -152,7 +135,7 @@ The attack is delivered as a single HTTP POST request that triggers a multi-stag
 
 #### 4.2.2 Double Base64 Encoding
 
-The payload uses double base64 encoding to eliminate all escaping issues:
+The payload uses double base64 encoding to get around escaping issues:
 
 ```
 [Agent Python source]
@@ -163,27 +146,24 @@ The payload uses double base64 encoding to eliminate all escaping issues:
                     → URL encode → curl -d "query=..."
 ```
 
-**Why double, not single**: The SSTI string uses single quotes to wrap the shell command. If the loader script contains quotes or special characters, it breaks the SSTI syntax. Base64 output only contains `A-Za-z0-9+/=`, which are safe in both shell and Jinja2 contexts.
+The reason for double encoding rather than single: the SSTI string uses single quotes to wrap the shell command. If the loader script contains quotes or special characters, it would break the SSTI syntax. Base64 output only uses `A-Za-z0-9+/=`, which are safe in both shell and Jinja2 contexts.
 
 #### 4.2.3 Fileless Execution via memfd_create
 
-**Problem**: Traditional malware writes executables to disk (`/tmp/backdoor`), creating file artifacts detectable by filesystem watchers (inotify), on-access AV scanners, and forensic analysis.
-
-**Solution**: Linux `memfd_create(2)` system call (syscall 319 on x86_64, available since Linux 3.17).
-
-**Core Mechanism**:
+Traditional malware writes executables to disk (`/tmp/backdoor`), creating file artifacts that can be found by filesystem watchers (inotify), on-access AV scanners, and forensic analysis. The Linux `memfd_create(2)` system call (syscall 319 on x86_64, available since Linux 3.17) avoids this entirely.
 
 ```
 memfd_create(name, flags) → fd
 ```
 
-1. Creates an **anonymous file** in the kernel's **tmpfs layer**
+What this does:
+1. Creates an anonymous file in the kernel's tmpfs layer
 2. Returns a file descriptor (fd) that behaves like a regular file
-3. The fd is **NOT linked to any directory entry** -- invisible in all mounted filesystems
-4. Content resides in **page cache (RAM)**, never written to a block device
-5. `/proc/<pid>/fd/<N>` provides a synthetic path for `execve()`
+3. The fd is not linked to any directory entry -- it's invisible in all mounted filesystems
+4. Content resides in page cache (RAM), never written to a block device
+5. `/proc/<pid>/fd/<N>` provides a synthetic path that `execve()` can use
 
-**Attack Chain**:
+The full attack chain looks like:
 
 ```
 fd = ctypes.CDLL(None).syscall(319, b"", 0)   # anonymous fd in RAM
@@ -195,23 +175,15 @@ pid = os.fork()                                 # fork: parent returns for Flask
         dict(os.environ))
 ```
 
-**Why `/proc/<pid>/fd/N` works with execve**:
-- procfs is a virtual filesystem; each fd entry is a symlink to the kernel's `struct file` object
-- `execve()` resolves the symlink, reaches the anonymous inode, and reads the memfd content
-- `fork()` duplicates the fd table -- the child's fd copy remains valid even after the parent exits
+The reason `/proc/<pid>/fd/N` works with execve is that procfs is a virtual filesystem where each fd entry is a symlink to the kernel's `struct file` object. `execve()` resolves the symlink, reaches the anonymous inode, and reads the memfd content. And since `fork()` duplicates the fd table, the child's fd copy remains valid even after the parent exits.
 
-**Why fork() is necessary**:
-- The SSTI `popen()` subprocess must exit promptly for Flask to return the HTTP response
-- `fork()` creates a child that runs independently; when the parent exits, the child becomes an orphan, re-parented to PID 1
-- The child's memfd fd is a duplicate (fork copies fd table), so the memfd remains valid
+`fork()` is also necessary here because the SSTI `popen()` subprocess must exit promptly for Flask to return the HTTP response. The fork creates a child that runs independently -- when the parent exits, the child becomes an orphan re-parented to PID 1, and its memfd fd (a duplicate from the fork) stays valid.
 
-**Impact**: Zero file artifacts on disk. Evades all file-based AV/EDR detection.
+The result is zero file artifacts on disk, evading all file-based AV/EDR detection.
 
 #### 4.2.4 AES-256-CTR Encryption via OpenSSL
 
 The ICMP C2 channel uses AES-256-CTR encryption implemented via ctypes calls to the system's OpenSSL libcrypto library.
-
-**Implementation**:
 
 ```python
 _libcrypto = ctypes.CDLL(ctypes.util.find_library('crypto') or 'libcrypto.so')
@@ -219,11 +191,9 @@ _libcrypto = ctypes.CDLL(ctypes.util.find_library('crypto') or 'libcrypto.so')
 AES_KEY = hashlib.sha256(SHARED_SECRET).digest()  # 32 bytes for AES-256
 ```
 
-**Key Derivation**: `AES_KEY = SHA-256(SHARED_SECRET)` produces a 32-byte key.
+Key derivation is `AES_KEY = SHA-256(SHARED_SECRET)`, producing a 32-byte key. For each packet, a random 16-byte IV (`os.urandom(16)`) is generated and prepended to the ciphertext, so identical plaintexts produce different ciphertexts.
 
-**Per-Packet**: A random 16-byte IV (`os.urandom(16)`) is generated for each packet and prepended to the ciphertext. This ensures that identical plaintexts produce different ciphertexts.
-
-**Properties of AES-256-CTR**:
+Properties of AES-256-CTR:
 
 | Property | Description |
 |----------|-------------|
@@ -234,9 +204,9 @@ AES_KEY = hashlib.sha256(SHARED_SECRET).digest()  # 32 bytes for AES-256
 | Symmetric CTR | Encrypt and decrypt are the same operation (XOR with keystream) |
 | Dependencies | System libcrypto via ctypes (pre-installed on all Linux distros) |
 
-**Why ctypes+OpenSSL instead of a pip package**: The agent runs on the target machine via memfd_create. Using ctypes to call the system's pre-installed OpenSSL library means zero pip dependencies are required on the target, making the agent self-contained with only Python stdlib.
+The reason for using ctypes+OpenSSL instead of a pip package is that the agent runs on the target machine via memfd_create. Calling the system's pre-installed OpenSSL through ctypes means zero pip dependencies on the target, keeping the agent self-contained with only Python stdlib.
 
-**Comparison with the pedagogical XOR cipher** (historical context):
+For context, the project originally used a simple XOR cipher. Here's how the two compare:
 
 | Property | XOR (Original) | AES-256-CTR (Current) |
 |----------|----------------|----------------------|
@@ -247,27 +217,26 @@ AES_KEY = hashlib.sha256(SHARED_SECRET).digest()  # 32 bytes for AES-256
 | Implementation | Pure Python | ctypes + OpenSSL libcrypto |
 | Dependencies | None | System libcrypto (pre-installed on Linux) |
 
-**Security Significance**: The upgrade from XOR to AES-256-CTR demonstrates that real-world malware increasingly uses strong cryptography, rendering payload inspection useless. This validates the necessity of behavior-based detection (eBPF), which monitors what a process *does* (syscall patterns) rather than what its traffic *contains*.
+The upgrade from XOR to AES-256-CTR shows that real-world malware increasingly uses strong cryptography, which makes payload inspection useless. This is exactly why behavior-based detection (eBPF) matters -- it monitors what a process *does* (syscall patterns) rather than what its traffic contains.
 
 #### 4.2.5 ICMP Covert Channel
 
-ICMP (Internet Control Message Protocol, RFC 792) is a Layer 3 protocol for network diagnostics.
+ICMP (Internet Control Message Protocol, RFC 792) is a Layer 3 protocol for network diagnostics. It's well-suited for covert channels for several reasons:
 
-**Why ICMP is suitable for covert channels**:
-1. Firewalls typically **allow ICMP by default** (blocking it breaks ping/traceroute)
-2. ICMP Echo Request/Reply carry an **arbitrary-length data payload** -- the protocol imposes no constraints on content
+1. Firewalls typically allow ICMP by default since blocking it breaks ping/traceroute
+2. ICMP Echo Request/Reply carry an arbitrary-length data payload -- the protocol doesn't constrain the content
 3. Most IDS/IPS inspect TCP/UDP ports and payloads but treat ICMP payload as opaque diagnostic data
-4. ICMP has **no port numbers** → no connection state → harder to track
+4. ICMP has no port numbers, so there's no connection state, making it harder to track
 
-**Linux Raw Socket Behavior**:
+On Linux, raw ICMP sockets work like this:
 ```python
 socket(AF_INET, SOCK_RAW, IPPROTO_ICMP)  # requires root or CAP_NET_RAW
 ```
-- The kernel delivers a COPY of each incoming ICMP packet to raw sockets
-- The kernel ALSO auto-replies to echo requests (sends echo reply)
+- The kernel delivers a copy of each incoming ICMP packet to raw sockets
+- The kernel also auto-replies to echo requests (sends echo reply)
 - We filter by ICMP ID field (0x1337) and type (8 = echo request)
 
-**Protocol Design**:
+The protocol is structured as follows:
 
 ```
 ┌──────────────────────────────────────────────────────┐
@@ -288,46 +257,34 @@ MSG_TYPE:
 
 Both sides send ICMP type 8 (echo request) and ignore type 0 (echo reply), since kernel auto-replies carry the original payload, not C2 commands.
 
-**ICMP Checksum (RFC 1071)**:
-1. Treat the packet as a sequence of 16-bit big-endian integers
-2. Sum all integers using ones' complement addition (carry wraps around)
-3. Take the ones' complement (bitwise NOT) of the final sum
-
-The receiver performs the same calculation over the entire packet including the checksum field; a result of `0xFFFF` indicates validity.
+For the ICMP checksum (RFC 1071): treat the packet as a sequence of 16-bit big-endian integers, sum them all using ones' complement addition (carry wraps around), then take the bitwise NOT of the final sum. The receiver runs the same calculation over the entire packet including the checksum field; `0xFFFF` means valid.
 
 #### 4.2.6 C2 Agent Behavior
 
-**Agent Execution Loop** (runs entirely in memory):
+The agent runs entirely in memory and follows this loop:
 1. Initial heartbeat: transmit hostname, UID, kernel version
 2. Repeat heartbeat every 30 seconds
 3. Receive MSG_COMMAND → `subprocess.run(cmd, shell=True, capture_output=True, timeout=15)`
 4. Split output into 480-byte chunks → encrypt with per-chunk random IV → transmit each
 5. On `__exit__` command → close socket and terminate
 
-**Timing Jitter**:
+Random timing jitter is added to make traffic pattern analysis harder:
 ```python
 time.sleep(random.uniform(1.0, 2.5))  # random delay each loop iteration
 time.sleep(0.05)                       # 50ms inter-chunk delay
 ```
-Random delays make traffic pattern analysis (e.g., periodic beacon detection) more difficult for the blue team.
 
-**C2 Server Architecture** (`C2Server` class):
-- **Main thread**: Interactive command prompt (blocking input)
-- **Listener thread**: Background ICMP packet capture and result reassembly
-- **Communication**: `threading.Event` for result synchronization between threads
-- **Commands**: `<cmd>` (execute on target), `payload` (print curl command), `status` (agent info), `exit` (kill agent), `quit` (leave C2, agent stays alive)
+The C2 server (`C2Server` class) has two threads: the main thread runs an interactive command prompt (blocking input), while a listener thread does background ICMP packet capture and result reassembly. They coordinate via `threading.Event`. Available commands include `<cmd>` (execute on target), `payload` (print curl command), `status` (agent info), `exit` (kill agent), and `quit` (leave C2, agent stays alive).
 
-**MITRE ATT&CK**: T1190, T1059.006, T1620, T1027, T1095
+MITRE ATT&CK: T1190, T1059.006, T1620, T1027, T1095
 
-**Impact**: Full remote shell access, with communication hidden inside ICMP traffic, encrypted with AES-256-CTR.
+The end result is full remote shell access with communication hidden inside ICMP traffic and encrypted with AES-256-CTR.
 
 ---
 
 ### 4.3 Phase 3: Post-Exploitation
 
-**Tools**: `post_exploit.sh`, C2 shell commands
-
-**Action**: Execute reconnaissance and information gathering from within the compromised target.
+Using `post_exploit.sh` and C2 shell commands, the attacker performs reconnaissance from within the compromised target:
 
 ```
 C2> whoami          → confirm execution identity
@@ -338,17 +295,13 @@ C2> ip addr         → network interface configuration
 C2> netstat -tlnp   → listening services
 ```
 
-**MITRE ATT&CK**: T1082 (System Information Discovery)
+MITRE ATT&CK: T1082 (System Information Discovery)
 
 ---
 
 ### 4.4 Phase 4: Evasion -- IP Alias Bypass
 
-**Tool**: `ip_switch.sh`
-
-**Context**: After the red team's reconnaissance triggers the honeypot on port 2222, the network MDR blocks their IP via iptables. The red team must regain network access.
-
-**Mechanism**: IP aliasing adds a secondary IP address to the same network interface:
+After the red team's reconnaissance triggers the honeypot on port 2222, the network MDR blocks their IP via iptables. To regain network access, `ip_switch.sh` uses IP aliasing to add a secondary address to the same interface:
 
 ```bash
 sudo ip addr add 172.22.137.15/20 dev eth0
@@ -359,21 +312,17 @@ sudo ip addr add 172.22.137.15/20 dev eth0
 | 172.22.137.14 (primary) | Triggered honeypot | Blocked by iptables DROP |
 | 172.22.137.15 (alias) | Attack via port 9999 | Not blocked (new, unknown IP) |
 
-**Why this works**: iptables rules are IP-based. A new source IP has no matching DROP rule, so packets pass through.
+This works because iptables rules are IP-based -- a new source IP has no matching DROP rule, so packets pass through. Of course, this also shows why IP-based blocking alone isn't enough; the blue team needs behavior-based detection (eBPF) that works regardless of source IP.
 
-**Why this is insufficient alone**: IP-based blocking is inherently limited. The blue team must also deploy behavior-based detection (eBPF) that operates independently of source IP.
-
-**MITRE ATT&CK**: Defense Evasion (no specific ATT&CK technique — IP aliasing is a general network-level evasion)
+MITRE ATT&CK: Defense Evasion (no specific ATT&CK technique -- IP aliasing is a general network-level evasion)
 
 ---
 
 ### 4.5 Phase 5: Evasion -- TCP Reverse Shell (eBPF v1 Bypass)
 
-**Tool**: `red_reverse_shell.py`
+At this point, the blue team has deployed eBPF v1 (`blue_ebpf_mdr.py --kill`), which detects and kills the fileless ICMP C2. The red team needs to adapt.
 
-**Context**: The blue team has deployed eBPF v1 (`blue_ebpf_mdr.py --kill`), which detects and kills the fileless ICMP C2. The red team must adapt.
-
-**Bypass Analysis**: eBPF v1 hooks three syscalls. The reverse shell triggers none of them:
+The key observation is that eBPF v1 hooks three syscalls, and a TCP reverse shell (`red_reverse_shell.py`) triggers none of them:
 
 | eBPF v1 Hook | Triggered? | Reason |
 |-------------|-----------|--------|
@@ -381,7 +330,7 @@ sudo ip addr add 172.22.137.15/20 dev eth0
 | `execve /proc/fd` | No | Executes `/bin/bash`, not from `/proc/fd` |
 | `socket(SOCK_RAW)` | No | Uses `SOCK_STREAM` (TCP), not `SOCK_RAW` |
 
-**Attack Chain**:
+The reverse shell attack chain:
 
 ```
 SSTI → os.popen → base64 -d | python3 → fork()
@@ -393,31 +342,23 @@ SSTI → os.popen → base64 -d | python3 → fork()
        → pty.spawn("/bin/bash")  ← interactive shell
 ```
 
-**Key Differences from `red_attacker.py`**:
-- No `memfd_create` (no fileless staging)
-- No ICMP raw socket (standard TCP connection)
-- No `execve` from `/proc/fd` (executes `/bin/bash` normally)
-- No `sudo` required (TCP socket, not raw ICMP)
+Compared to `red_attacker.py`, this approach uses no `memfd_create`, no ICMP raw socket, no `execve` from `/proc/fd`, and doesn't need `sudo`. It still uses the same SSTI injection mechanism for delivery, but the base64-decoded payload is just a simple fork+connect+dup2+pty script.
 
-**Delivery**: Same SSTI injection mechanism, but the base64-decoded payload is a simple fork+connect+dup2+pty script instead of the memfd loader.
+The listener is a built-in TCP listener (`select()`-based) that catches the incoming connection on port 4444.
 
-**Listener**: Built-in TCP listener (`select()`-based) that catches the incoming reverse shell connection on port 4444.
+MITRE ATT&CK: T1059.006, T1095, T1571
 
-**MITRE ATT&CK**: T1059.006, T1095, T1571
-
-**Impact**: Full interactive shell access that completely bypasses eBPF v1 detection.
+This gives the attacker a full interactive shell that completely bypasses eBPF v1 detection.
 
 ---
 
 ### 4.6 Phase 5b: Data Exfiltration
 
-**Tools**: `exfil_agent.py` (target-side), `exfil_listener.py` (attacker-side), `deploy_agent.sh` (deployment helper)
-
-**Purpose**: After establishing access, exfiltrate sensitive data through covert channels that bypass standard monitoring.
+After establishing access, the red team exfiltrates sensitive data through covert channels using `exfil_agent.py` (target-side), `exfil_listener.py` (attacker-side), and `deploy_agent.sh`.
 
 #### 4.6.1 Exfiltration Agent (`exfil_agent.py`)
 
-Deployed to the target via the C2 shell or reverse shell. Collects sensitive files automatically:
+Deployed to the target via the C2 shell or reverse shell. It automatically collects:
 - `/etc/passwd`, `/etc/shadow`
 - SSH keys (`~/.ssh/`)
 - Bash history (`~/.bash_history`)
@@ -425,12 +366,12 @@ Deployed to the target via the C2 shell or reverse shell. Collects sensitive fil
 - Crontab and environment variables
 - Other users' home directory contents
 
-**Channel Auto-Detection**: The agent probes available exfiltration channels in priority order:
-1. **DNS** (via `dig` command) -- preferred
-2. **DNS** (via Python socket fallback) -- if `dig` not available
-3. **ICMP** (via `ping`) -- last resort
+The agent probes available exfiltration channels in priority order:
+1. DNS (via `dig` command) -- preferred
+2. DNS (via Python socket fallback) -- if `dig` isn't available
+3. ICMP (via `ping`) -- last resort
 
-**Self-Deletion**: After exfiltration completes, the agent deletes its own file from disk (`os.remove(os.path.abspath(__file__))`), removing forensic evidence.
+After exfiltration completes, the agent deletes its own file from disk (`os.remove(os.path.abspath(__file__))`) to remove forensic evidence.
 
 #### 4.6.2 DNS Exfiltration Channel
 
@@ -464,32 +405,26 @@ Protocol (16-byte payload per ping):
 
 #### 4.6.4 Exfiltration Listener (`exfil_listener.py`)
 
-Runs on the attacker machine. Simultaneously listens on:
-- **UDP port 53** (fake DNS server): Parses DNS queries, extracts Base32 data from subdomain labels, sends NXDOMAIN responses
-- **Raw ICMP socket**: Captures ICMP echo requests, searches for `0xEFBE` magic marker in payload
+Runs on the attacker machine, simultaneously listening on:
+- UDP port 53 (fake DNS server): Parses DNS queries, extracts Base32 data from subdomain labels, sends NXDOMAIN responses
+- Raw ICMP socket: Captures ICMP echo requests, searches for `0xEFBE` magic marker in payload
 
-Both channels use a shared reassembly engine with:
-- Per-file chunk tracking with sequence numbers
-- MD5 checksum verification on completion
-- Safe file writing to `./loot/` directory with mode 0600
-- Privilege dropping after binding raw socket (security: runs as non-root after socket creation)
+Both channels feed into a shared reassembly engine with per-file chunk tracking (sequence numbers), MD5 checksum verification on completion, safe file writing to `./loot/` with mode 0600, and privilege dropping after binding the raw socket so it runs as non-root after socket creation.
 
-**MITRE ATT&CK**: T1048.003 (Exfiltration Over Alternative Protocol), T1005 (Data from Local System)
+MITRE ATT&CK: T1048.003 (Exfiltration Over Alternative Protocol), T1005 (Data from Local System)
 
 ---
 
 ### 4.7 Legacy WAF Bypass (`red_team/exploit.py`)
 
-**Purpose**: Backup attack tool for scenarios with a Web Application Firewall (WAF).
-
-**Bypass Techniques**:
+This is a backup attack tool for scenarios with a Web Application Firewall. It uses several bypass techniques:
 - `${IFS}` (Internal Field Separator): Replaces spaces to evade WAF space-matching rules
 - Base64 encoding: Encodes the entire payload to avoid keyword blacklists
 - `b\a\s\h`: Backslash obfuscation evades literal string matching for "bash"
 
-**MITRE ATT&CK**: T1190, T1059.006, T1027
+MITRE ATT&CK: T1190, T1059.006, T1027
 
-**Note**: This tool targets an older socket-based target application. It is retained as a backup and for demonstrating WAF evasion principles.
+This tool targets an older socket-based target application and is kept mainly as a backup and for showing WAF evasion principles.
 
 ---
 
@@ -508,7 +443,7 @@ Both channels use a shared reassembly engine with:
 
 ### 5.1 Defense-in-Depth Architecture
 
-The blue team implements a two-layer defense architecture, each layer addressing different threat vectors:
+The blue team uses a two-layer defense, with each layer addressing different threat vectors:
 
 ```
 ┌─────────────────────────────────────────────────────┐
@@ -529,30 +464,28 @@ The blue team implements a two-layer defense architecture, each layer addressing
 └─────────────────────────────────────────────────────┘
 ```
 
-**Principle**: Each layer has inherent limitations. Only their combination provides robust protection. Network-layer defense blocks known-bad IPs but is bypassed by IP aliasing. Kernel-layer defense detects malicious behavior regardless of source IP but requires knowledge of which syscalls to monitor.
+The point is that each layer has inherent limitations, and only the combination provides real protection. Network-layer defense blocks known-bad IPs but gets bypassed by IP aliasing. Kernel-layer defense detects malicious behavior regardless of source IP but you have to know which syscalls to monitor.
 
 ---
 
 ### 5.2 Layer 1: Network MDR (`blue_team/blue_mdr_network.py`)
 
-**Mechanism**: A monitoring daemon that polls `trap.log` (written by the honeypot) for new attacker IP entries. Upon detection, it immediately executes:
+This is a monitoring daemon that polls `trap.log` (written by the honeypot) for new attacker IP entries. When it finds one, it runs:
 
 ```
 iptables -I INPUT 1 -s <attacker_ip> -j DROP
 ```
 
-The rule is inserted at **position 1** (highest priority) in the INPUT chain, ensuring it takes precedence over any existing ACCEPT rules.
+The rule goes at position 1 (highest priority) in the INPUT chain so it takes precedence over any existing ACCEPT rules.
 
-**Implementation Details**:
-- IP extraction: Regex pattern matching on `trap.log` entries
-- Deduplication: Tracks blocked IPs in a set; skips already-blocked addresses
-- `--cleanup` flag: Removes all added iptables rules on exit
-- `--soc-log` flag: Writes events to JSONL file for SOC dashboard integration
-- Polling interval: Configurable (default 1 second)
+Some implementation details:
+- IP extraction uses regex pattern matching on `trap.log` entries
+- Already-blocked IPs are tracked in a set to avoid duplicates
+- `--cleanup` removes all added iptables rules on exit
+- `--soc-log` writes events to a JSONL file for SOC dashboard integration
+- Polling interval is configurable (default 1 second)
 
-**Effectiveness**: Zero false-positive detection. Any connection to the honeypot on port 2222 is unauthorized by definition.
-
-**Limitation**: IP-based blocking can be circumvented by changing the source IP (e.g., via IP aliasing with `ip_switch.sh`). This motivates the need for Layer 2.
+Since any connection to the honeypot on port 2222 is unauthorized by definition, false positives are essentially zero. The obvious limitation is that IP-based blocking can be circumvented by changing the source IP (as shown with `ip_switch.sh`), which is why Layer 2 is needed.
 
 ---
 
@@ -560,27 +493,22 @@ The rule is inserted at **position 1** (highest priority) in the INPUT chain, en
 
 #### 5.3.1 eBPF Architecture Overview
 
-**eBPF (extended Berkeley Packet Filter)** is a technology that allows sandboxed programs to run inside the Linux kernel WITHOUT modifying kernel source code or loading kernel modules.
+eBPF (extended Berkeley Packet Filter) lets you run sandboxed programs inside the Linux kernel without modifying kernel source code or loading kernel modules.
 
-**Execution Pipeline**:
+The execution pipeline:
 ```
 C source → Clang/LLVM compile → eBPF bytecode → Kernel Verifier validation
   → JIT compile to x86_64 native code → attach to Tracepoint → zero-overhead execution
 ```
 
-**Safety Guarantees (enforced by Verifier)**:
-- No unbounded loops (provable termination required)
-- No out-of-bounds memory access
-- No arbitrary pointer dereference
-- Stack size limited to 512 bytes
-- **An eBPF program CANNOT crash or hang the kernel**
+The verifier enforces several safety guarantees: no unbounded loops (provable termination required), no out-of-bounds memory access, no arbitrary pointer dereference, and stack size limited to 512 bytes. An eBPF program cannot crash or hang the kernel.
 
-**Why eBPF is ideal for security monitoring**:
-- Runs in kernel space → zero context-switch overhead
-- Sees ALL syscalls before they execute (tracepoints on `sys_enter_*`)
-- Can read process metadata (PID, UID, comm) from kernel `task_struct`
-- Can actively respond: `bpf_send_signal()` kills processes from kernel space
-- Cannot be evaded by userspace anti-debugging or rootkit techniques
+What makes eBPF useful for security monitoring:
+- Runs in kernel space with zero context-switch overhead
+- Sees all syscalls before they execute (tracepoints on `sys_enter_*`)
+- Can read process metadata (PID, UID, comm) from the kernel `task_struct`
+- Can actively respond -- `bpf_send_signal()` kills processes from kernel space
+- Can't be evaded by userspace anti-debugging or rootkit techniques
 
 #### 5.3.2 Tracepoints vs Kprobes
 
@@ -591,16 +519,13 @@ C source → Clang/LLVM compile → eBPF bytecode → Kernel Verifier validation
 | Trigger timing | Syscall entry/exit | Any kernel function |
 | Use case | Syscall monitoring | Deep kernel debugging |
 
-We choose **Tracepoints** because:
-1. `sys_enter_*` fires BEFORE the syscall executes → preemptive kill possible
-2. Stable across kernel 5.x--6.x
-3. BCC provides clean `TRACEPOINT_PROBE()` macros
+We use tracepoints because `sys_enter_*` fires before the syscall executes (so preemptive kill is possible), they're stable across kernel 5.x--6.x, and BCC provides clean `TRACEPOINT_PROBE()` macros.
 
 #### 5.3.3 `bpf_send_signal(SIGKILL)` Mechanism
 
-Available since Linux 5.3. This BPF helper sends a signal to the CURRENT task (the process that triggered the tracepoint).
+Available since Linux 5.3. This BPF helper sends a signal to the current task (the process that triggered the tracepoint).
 
-**Why more effective than userspace `kill()`**:
+The difference from userspace `kill()` is significant:
 
 ```
 eBPF path (bpf_send_signal):
@@ -614,16 +539,13 @@ Userspace path (kill()):
   Latency: milliseconds (malware may have already completed its operation)
 ```
 
-**Key difference**: With `bpf_send_signal`, the process is killed BEFORE the syscall handler runs. The attack chain is broken at the very first step.
+With `bpf_send_signal`, the process is killed before the syscall handler runs, so the attack chain is broken at the very first step.
 
 #### 5.3.4 eBPF Data Structures
 
-**BPF_PERF_OUTPUT (Perf Ring Buffer)**:
-- Lock-free circular buffer shared between kernel and userspace via mmap
-- Kernel writes events; Python reads events via callback
-- Zero-copy communication
+BPF_PERF_OUTPUT (Perf Ring Buffer) is a lock-free circular buffer shared between kernel and userspace via mmap. The kernel writes events and Python reads them via callback -- zero-copy communication.
 
-**BPF_HASH (Hash Map)**:
+BPF_HASH (Hash Map) is used for several purposes:
 - `memfd_pids`: tracks PIDs that called memfd_create (for correlation)
 - `whitelist`: userspace writes safe PIDs, kernel reads during hook execution
 - `suspect_ports` (v2): configurable suspicious destination ports
@@ -633,7 +555,7 @@ Userspace path (kill()):
 
 ### 5.4 eBPF MDR v1 (`blue_team/blue_ebpf_mdr.py`)
 
-**Three tracepoint hooks** detect fileless malware:
+v1 uses three tracepoint hooks to detect fileless malware:
 
 | Hook | Tracepoint | Detection Logic | Severity |
 |------|-----------|----------------|----------|
@@ -641,39 +563,28 @@ Userspace path (kill()):
 | Hook 2 | `sys_enter_execve` | Pattern-match filename for `/proc/<pid>/fd/*` → fileless exec confirmed | CRITICAL |
 | Hook 3 | `sys_enter_socket` | `AF_INET(2) + SOCK_RAW(3) + IPPROTO_ICMP(1)` + PID correlates with memfd | CRITICAL |
 
-**Hook 1 -- memfd_create detection**:
-- Fires at syscall entry, BEFORE the anonymous fd is created
-- Records PID + timestamp in `memfd_pids` hash map for later correlation
-- In `--kill` mode, `bpf_send_signal(9)` terminates the process before the fd exists
+Hook 1 (memfd_create detection) fires at syscall entry, before the anonymous fd is created. It records PID + timestamp in the `memfd_pids` hash map for later correlation. In `--kill` mode, `bpf_send_signal(9)` terminates the process before the fd even exists.
 
-**Hook 2 -- Fileless execution detection**:
-- Reads the `filename` argument of execve
-- Checks prefix: starts with `/proc/` (6 bytes)
-- Scans positions 6--19 for `/fd/` substring (PID can be 1--7 digits)
-- Bounded loop (14 iterations) satisfies eBPF verifier's termination requirement
+Hook 2 (fileless execution detection) reads the `filename` argument of execve and checks whether it starts with `/proc/` (6 bytes), then scans positions 6--19 for a `/fd/` substring. The bounded loop (14 iterations) satisfies the eBPF verifier's termination requirement.
 
-**Hook 3 -- ICMP covert channel detection**:
-- Filters for `socket(AF_INET, SOCK_RAW, IPPROTO_ICMP)` specifically
-- Performs **correlation**: checks `memfd_pids` hash map for current PID or parent PID
-- If correlated: "CORRELATED:memfd+icmp" → fileless C2 confirmed (CRITICAL)
-- If standalone: "raw_icmp_socket" → alert only (could be legitimate ping)
+Hook 3 (ICMP covert channel detection) filters for `socket(AF_INET, SOCK_RAW, IPPROTO_ICMP)` specifically, then checks the `memfd_pids` hash map for the current PID or parent PID. If there's a match, it's a "CORRELATED:memfd+icmp" event -- fileless C2 confirmed, severity CRITICAL. If it's a standalone raw ICMP socket it just generates an alert, since it could be legitimate (e.g., ping).
 
-**Correlation Detection (Multi-Indicator)**:
-- `memfd_create` alone → HIGH (could be legitimate: Chrome IPC, systemd)
+The correlation logic is what makes this effective:
+- `memfd_create` alone → HIGH (could be legitimate -- Chrome IPC, systemd, etc.)
 - Raw ICMP socket alone → ALERT (could be ping)
-- `memfd_create` + raw ICMP socket → **CRITICAL + CORRELATED** (fileless C2 confirmed)
+- `memfd_create` + raw ICMP socket from the same process → CRITICAL + CORRELATED (fileless C2 confirmed)
 
-**Cold-Start Detection**: `/proc/*/exe` scanner checks for already-running memfd processes at startup, covering the gap before eBPF hooks are active. If `--kill` is enabled, detected processes are killed immediately via `os.kill(pid, SIGKILL)`.
+There's also a cold-start detection feature: at startup, a `/proc/*/exe` scanner checks for already-running memfd processes, covering the gap before eBPF hooks are active. With `--kill` enabled, those are killed immediately via `os.kill(pid, SIGKILL)`.
 
-**Whitelist**: Self-PID is always whitelisted. Additional PIDs can be specified via `--whitelist 1234,5678`.
+Self-PID is always whitelisted, and you can add more via `--whitelist 1234,5678`.
 
 ---
 
 ### 5.5 eBPF MDR v2 (`blue_team/blue_ebpf_mdr_v2.py`)
 
-**Why v2 is needed**: v1 only detects fileless malware that uses `memfd_create` + ICMP raw sockets. A standard TCP reverse shell (fork → connect → dup2 → pty.spawn) bypasses ALL v1 hooks because it never calls `memfd_create` or opens a raw socket.
+v1 only catches fileless malware using `memfd_create` + ICMP raw sockets. A standard TCP reverse shell (fork → connect → dup2 → pty.spawn) bypasses all v1 hooks because it never calls `memfd_create` or opens a raw socket. That's why v2 was needed.
 
-**v2 retains all 3 v1 hooks** and adds 3 new hooks:
+v2 keeps all 3 v1 hooks and adds 3 new ones:
 
 | Hook | Tracepoint | Detection Logic | Severity |
 |------|-----------|----------------|----------|
@@ -683,9 +594,9 @@ Userspace path (kill()):
 
 #### Hook 4 -- Suspicious Port Detection (`sys_enter_connect`)
 
-**Mechanism**: Reads the first 8 bytes of `sockaddr_in` from userspace to extract `sin_family` and `sin_port`. Checks the port against the `suspect_ports` BPF_HASH map.
+This hook reads the first 8 bytes of `sockaddr_in` from userspace to extract `sin_family` and `sin_port`, then checks the port against the `suspect_ports` BPF_HASH map.
 
-**Default suspicious ports**: 4444, 4445, 5555, 1234, 1337 (configurable via `--suspect-ports`).
+Default suspicious ports: 4444, 4445, 5555, 1234, 1337 (configurable via `--suspect-ports`).
 
 ```c
 // Read sockaddr: [family:2][port:2][addr:4]
@@ -697,12 +608,11 @@ u8 *is_suspect = suspect_ports.lookup(&port);
 if (!is_suspect) return 0;  // Not suspicious, ignore
 ```
 
-**Advantage**: Fast detection at connection time.
-**Limitation**: Only catches connections to known suspicious ports. Reverse shells on port 80/443 would evade this hook alone.
+This catches connections at connect time, which is fast. The limitation is that it only works for known suspicious ports -- a reverse shell on port 80/443 would get past this hook alone.
 
 #### Hook 5/6 -- Reverse Shell Pattern Detection (`sys_enter_dup2`, `sys_enter_dup3`)
 
-**Mechanism**: Tracks a per-PID bitmask in the `dup2_tracker` BPF_HASH. Each time a process calls `dup2(oldfd, newfd)` where `newfd` is 0, 1, or 2, the corresponding bit is set:
+These hooks track a per-PID bitmask in the `dup2_tracker` BPF_HASH. Each time a process calls `dup2(oldfd, newfd)` where `newfd` is 0, 1, or 2, the corresponding bit is set:
 
 ```c
 u8 new_mask = mask ? *mask : 0;
@@ -715,14 +625,13 @@ if (new_mask == 0x07) {         // All three bits set: 0b111 = 7
 }
 ```
 
-**Why both dup2 AND dup3**: Python's `os.dup2(fd, fd2, inheritable=False)` calls `dup3()` (with `O_CLOEXEC` flag) instead of `dup2()`. Without Hook 6, an attacker could bypass detection by passing `inheritable=False`.
+Both dup2 and dup3 need to be hooked because Python's `os.dup2(fd, fd2, inheritable=False)` actually calls `dup3()` (with `O_CLOEXEC` flag) instead of `dup2()`. Without Hook 6, an attacker could bypass detection just by passing `inheritable=False`.
 
-**Advantage**: Port-agnostic. Catches reverse shells on ANY port, including 80 or 443.
-**Principle**: The behavioral signature of a reverse shell (redirecting all three standard file descriptors) is invariant regardless of the transport protocol or port.
+The important thing about the dup2/dup3 approach is that it's port-agnostic. It catches reverse shells on any port, including 80 or 443. The behavioral signature of a reverse shell -- redirecting all three standard file descriptors -- is the same regardless of what transport protocol or port is used.
 
 #### v2 SOC Integration
 
-When `--soc-log` is specified, v2 writes JSON events to a JSONL file that the SOC dashboard reads in real-time:
+With `--soc-log`, v2 writes JSON events to a JSONL file that the SOC dashboard reads in real-time:
 
 ```json
 {
@@ -739,9 +648,7 @@ When `--soc-log` is specified, v2 writes JSON events to a JSONL file that the SO
 
 ### 5.6 SOC Dashboard (`blue_team/soc_dashboard.py`)
 
-**Purpose**: A Flask-based web application (port 8080) that aggregates events from all defensive components and displays them in a real-time dark-themed SOC console.
-
-**Architecture**:
+A Flask-based web application (port 8080) that pulls in events from all defensive components and shows them on a real-time dark-themed SOC console.
 
 ```
 Data Sources                 Dashboard Server                Browser
@@ -756,15 +663,9 @@ Data Sources                 Dashboard Server                Browser
 └────────────┘              └──────────────────┘           └──────────┘
 ```
 
-**Features**:
-- **Server-Sent Events (SSE)** via `/stream` endpoint for real-time browser updates
-- **Multi-source ingestion**: Reads `trap.log` (honeypot events) and `soc_events.jsonl` (eBPF alerts, iptables blocks)
-- **HTTP POST API** (`/api/event`) for programmatic event submission by other tools
-- **Statistics cards**: Total events, blocked IPs, process kills, critical alerts
-- **Color-coded severity**: CRITICAL (red), HIGH (yellow), MEDIUM (blue), INFO (gray)
-- **Auto-scroll event timeline** with most recent events at top
+It uses Server-Sent Events (SSE) via `/stream` for real-time browser updates, reads from multiple sources (`trap.log` for honeypot events, `soc_events.jsonl` for eBPF alerts and iptables blocks), and exposes an HTTP POST API (`/api/event`) for programmatic event submission. The UI has statistics cards (total events, blocked IPs, process kills, critical alerts), color-coded severity levels (CRITICAL = red, HIGH = yellow, MEDIUM = blue, INFO = gray), and an auto-scrolling event timeline.
 
-**Integration Points**:
+Integration points:
 - `honeypot.py` → writes to `trap.log` → dashboard polls and displays
 - `blue_mdr_network.py --soc-log` → writes JSONL → dashboard polls and displays
 - `blue_ebpf_mdr_v2.py --soc-log` → writes JSONL → dashboard polls and displays
@@ -773,21 +674,21 @@ Data Sources                 Dashboard Server                Browser
 
 ## 6. 7-Round Iterative Engagement
 
-The demonstration is structured as a 7-round engagement that illustrates the adversarial escalation between red and blue teams:
+The demo is structured as 7 rounds showing the back-and-forth escalation between red and blue:
 
-| Round | Actor | Action | Outcome | Key Insight |
-|-------|-------|--------|---------|-------------|
-| 1 | Red | Reconnaissance (nmap via `recon.sh`) | Discovers ports 2222 and 9999 | Attack surface mapping |
-| 1b | Red → Blue | Honeypot trap triggered (port 2222) | Red team IP blocked via iptables | Cyber deception works |
-| 1c | Red | IP alias bypass (`ip_switch.sh add`) | Regains network access with new IP | IP-based defense is insufficient |
-| 2 | Red | SSTI + fileless C2 (`red_attacker.py`) | Full remote control via ICMP C2 | Fileless malware evades file-based detection |
-| 3 | Blue | eBPF v1 deployed (`blue_ebpf_mdr.py --kill`) | Existing C2 agent killed; re-attacks blocked | Kernel-level detection works |
-| 4 | Red | Re-attack with `red_attacker.py` | Blocked by eBPF v1 at `memfd_create` | Behavior-based detection is effective |
-| 5 | Red | TCP reverse shell (`red_reverse_shell.py`) | Bypasses all 3 v1 hooks | Attackers adapt when blocked |
-| 6 | Blue | eBPF v2 deployed (`blue_ebpf_mdr_v2.py --kill`) | Reverse shell detected via `connect` + `dup2/dup3` | Defenders must evolve too |
-| 7 | Blue | SOC dashboard (`soc_dashboard.py`) | Unified visibility across all events | Operational awareness is essential |
+| Round | Actor | Action | Outcome |
+|-------|-------|--------|---------|
+| 1 | Red | Reconnaissance (nmap via `recon.sh`) | Discovers ports 2222 and 9999 |
+| 1b | Red → Blue | Honeypot trap triggered (port 2222) | Red team IP blocked via iptables |
+| 1c | Red | IP alias bypass (`ip_switch.sh add`) | Regains network access with new IP |
+| 2 | Red | SSTI + fileless C2 (`red_attacker.py`) | Full remote control via ICMP C2 |
+| 3 | Blue | eBPF v1 deployed (`blue_ebpf_mdr.py --kill`) | Existing C2 agent killed; re-attacks blocked |
+| 4 | Red | Re-attack with `red_attacker.py` | Blocked by eBPF v1 at `memfd_create` |
+| 5 | Red | TCP reverse shell (`red_reverse_shell.py`) | Bypasses all 3 v1 hooks |
+| 6 | Blue | eBPF v2 deployed (`blue_ebpf_mdr_v2.py --kill`) | Reverse shell detected via `connect` + `dup2/dup3` |
+| 7 | Blue | SOC dashboard (`soc_dashboard.py`) | Unified visibility across all events |
 
-**Core Lesson**: No single defense is sufficient. The iterative engagement demonstrates that cybersecurity is a continuous adversarial process, not a one-time deployment.
+The takeaway is that no single defense is sufficient. Security is a continuous adversarial process -- you deploy something, the attacker finds a way around it, and you have to adapt.
 
 ---
 
@@ -829,61 +730,33 @@ The demonstration is structured as a 7-round engagement that illustrates the adv
 
 ## 8. Security Considerations and Limitations
 
-### 8.1 Encryption Strength
+The AES-256-CTR encryption with per-packet random IV provides strong confidentiality, but there are caveats. The shared secret is hardcoded in both the C2 server and the embedded agent code. Key derivation uses a single SHA-256 hash with no stretching (PBKDF2/Argon2 would be better). There's also no authentication -- AES-CTR is malleable, and a production system would need AES-GCM or ChaCha20-Poly1305. For the purposes of this lab, the encryption is strong enough to show that payload inspection is futile and behavior-based detection is the way to go.
 
-AES-256-CTR with per-packet random IV provides strong confidentiality. However:
-- The shared secret is hardcoded in both the C2 server and the embedded agent code
-- Key derivation uses a single SHA-256 hash (no stretching via PBKDF2/Argon2)
-- No authentication (AES-CTR is malleable; production systems require AES-GCM or ChaCha20-Poly1305)
-- For this lab, the encryption strength is more than sufficient to demonstrate that payload inspection is futile and behavior-based detection is necessary
+The ICMP channel has very limited bandwidth: roughly 480 bytes per packet, and with jitter delays of 1.0--2.5 seconds per loop, throughput is extremely low. It's fine for command/control but not for moving large amounts of data. That's why exfiltration is handled separately through the DNS/ICMP channels with their own chunking protocols.
 
-### 8.2 ICMP Channel Bandwidth
+There are several ways the eBPF detection could potentially be bypassed. An attacker could use `shm_open()` instead of `memfd_create` to create shared memory objects, or `fexecve()` instead of `execve` with a `/proc` path to execute directly from an fd. `ptrace` injection into existing processes wouldn't trigger any of the current hooks either. For port-based detection, using port 80 or 443 for a reverse shell would bypass Hook 4, though Hook 5/6 would still catch the dup2 pattern. Possible mitigations include adding more hook points, combining with seccomp-BPF, or deploying a full endpoint detection solution.
 
-- ~480 bytes payload per ICMP packet
-- With jitter delays (1.0--2.5 seconds per loop), effective throughput is extremely low
-- Suitable for command/control, not for large data exfiltration
-- Exfiltration is handled separately via DNS/ICMP channels with dedicated chunking protocols
+The honeypot has its own limitations. It's low-interaction (only mimics the SSH banner, doesn't accept authentication), so a sophisticated attacker might recognize it during fingerprinting. It also only detects active connections -- passive recon like a SYN scan without a full connect might not trigger logging.
 
-### 8.3 eBPF Detection Bypass Possibilities
-
-- **`shm_open()` instead of `memfd_create`**: Creates shared memory objects (requires additional hook)
-- **`fexecve()` instead of `execve` with `/proc` path**: Direct execution from fd (requires additional hook)
-- **`ptrace` injection**: Inject code into existing processes without execve (no current hook)
-- **Non-standard reverse shell ports**: Using port 80/443 would bypass Hook 4 (but Hook 5/6 still catches it via dup2 pattern)
-- **Mitigation**: Add more hook points, combine with seccomp-BPF, or deploy endpoint detection solutions
-
-### 8.4 Honeypot Limitations
-
-- Low-interaction honeypot: Only mimics SSH banner; does not accept authentication
-- Sophisticated attackers may recognize the fake SSH service during fingerprinting
-- Only detects active connections; passive reconnaissance (e.g., SYN scan without full connect) may not trigger logging
-
-### 8.5 Lab vs Production Environment
-
-- This lab assumes Flask runs as root (providing `CAP_NET_RAW` for ICMP)
-- In production, web services run as low-privilege users; raw ICMP sockets would require additional privilege escalation
-- eBPF detection should be part of a layered defense (EDR, SIEM, network monitoring), not a standalone solution
-- The SOC dashboard is single-machine; production SOC systems aggregate data from hundreds of endpoints
+Finally, this is a lab environment with some simplifying assumptions. Flask runs as root (giving `CAP_NET_RAW` for ICMP), but in production, web services run as low-privilege users and raw ICMP sockets would need additional privilege escalation. eBPF detection should be part of a layered defense (EDR, SIEM, network monitoring), not standalone. And the SOC dashboard is single-machine, whereas production SOC systems aggregate data from hundreds of endpoints.
 
 ---
 
 ## 9. Conclusion
 
-This project demonstrates a complete Kill Chain attack-defense cycle across 7 rounds of adversarial engagement, covering 15 MITRE ATT&CK techniques with corresponding detection capabilities across two independent defense layers.
+This project walks through a complete Kill Chain attack-defense cycle across 7 rounds, covering 15 MITRE ATT&CK techniques with detection capabilities across two independent defense layers.
 
-**Key Insights**:
+A few things stand out from the exercise:
 
-1. **No single defense is sufficient.** Network-layer defenses (honeypot + iptables) can be bypassed by changing IP addresses. Kernel-layer defenses (eBPF v1) can be bypassed by using different syscall patterns (TCP reverse shell). Only the combination of multiple independent detection mechanisms provides robust protection.
+No single defense held up on its own. The honeypot and iptables got bypassed by IP aliasing. eBPF v1 got bypassed by the TCP reverse shell using different syscalls. You need multiple independent detection mechanisms working together.
 
-2. **Attackers adapt, so defenders must evolve.** When eBPF v1 blocked the fileless ICMP C2, the red team pivoted to a standard TCP reverse shell that used none of the monitored syscalls. The blue team responded by deploying eBPF v2 with additional hooks for `connect()` and `dup2()/dup3()`, restoring detection capability. This cycle mirrors real-world security operations.
+The attacker-defender cycle is real and ongoing. When eBPF v1 blocked the fileless C2, the red team just switched to a reverse shell that dodged all the monitored syscalls. The blue team had to respond with v2, adding hooks for `connect()` and `dup2()/dup3()`. This is basically how real security operations work -- it's never "deploy and done."
 
-3. **Behavior-based detection transcends encryption.** Upgrading the C2 channel from XOR to AES-256-CTR made payload inspection impossible, yet eBPF detection remained fully effective because it monitors **syscall behavior** -- what the process does -- rather than what the traffic contains.
+Behavior-based detection holds up where payload inspection doesn't. Upgrading from XOR to AES-256-CTR made the traffic opaque to any content-based analysis, but eBPF still caught everything because it watches syscall patterns, not packet contents. This is an important point for why kernel-level monitoring matters.
 
-4. **Fileless techniques challenge traditional defenses.** By executing entirely in memory via `memfd_create`, the C2 agent leaves no filesystem artifacts for traditional antivirus or forensic tools to detect. This validates the need for kernel-level behavioral monitoring through technologies like eBPF.
+The fileless execution via `memfd_create` is a good example of why traditional AV approaches struggle with modern techniques. There are no filesystem artifacts to scan. You need something like eBPF that operates at the kernel level to see what processes are actually doing.
 
-5. **Operational visibility is essential.** The SOC dashboard provides unified situational awareness across all defensive components (honeypot, network MDR, eBPF v1/v2), enabling the blue team to understand the full attack picture rather than responding to isolated alerts.
-
-6. **Cyber deception provides early warning.** The SSH honeypot on port 2222 provides zero-false-positive detection of reconnaissance activity, giving the blue team advance notice of an attack before the real target (port 9999) is engaged.
+Having the SOC dashboard tying everything together also turned out to matter more than I expected. Without unified visibility across the honeypot, network MDR, and both eBPF versions, you're just looking at isolated alerts without the full picture of what's happening.
 
 ---
 

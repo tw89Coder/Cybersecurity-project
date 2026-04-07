@@ -1,4 +1,4 @@
-# Red Team Playbook - 企業攻防演練紅方操作手冊
+# Red Team Playbook - 紅方操作手冊
 
 ## 環境概覽
 
@@ -32,13 +32,13 @@ bash red_team/recon.sh <TARGET_IP>
 nmap -p 2000-10000 -sV <TARGET_IP>
 ```
 
-**關鍵發現：**
-- Port 2222 → SSH banner (蜜罐，不要碰！觸碰會被封鎖 IP)
+**掃出來會看到：**
+- Port 2222 → SSH banner (蜜罐，不要碰！碰了會被封鎖 IP)
 - Port 9999 → Diagnostic API (真正目標，Flask SSTI 漏洞)
 
 ### Phase 2: Exploitation — Fileless ICMP C2 (主要攻擊)
 
-使用 `red_attacker.py`，透過 SSTI 注入 → memfd_create 無檔案載入 → ICMP 隱蔽 C2：
+用 `red_attacker.py` 做 SSTI 注入 → memfd_create 無檔案載入 → ICMP 隱蔽 C2：
 
 ```bash
 # 終端 1: 啟動 C2 Server（需要 sudo，因為用 ICMP raw socket）
@@ -83,7 +83,7 @@ C2> quit          # 退出 C2
 
 ### Phase 3: Post-Exploitation (後滲透)
 
-在 C2 shell 中執行情報蒐集：
+拿到 shell 之後做一些基本情報蒐集：
 
 ```
 C2> whoami && id
@@ -103,8 +103,8 @@ C2> ls -la /home/
 
 ### Phase 5: Evasion — eBPF v1 Bypass (繞過防禦)
 
-**場景**：藍軍已啟動 eBPF v1（`blue_ebpf_mdr.py --kill`），memfd_create 攻擊被攔截。
-**策略**：改用不經過 memfd_create 的 TCP 反向 Shell。
+**狀況**：藍軍開了 eBPF v1（`blue_ebpf_mdr.py --kill`），memfd_create 攻擊被擋了。
+**對策**：改用不走 memfd_create 的 TCP reverse shell。
 
 ```bash
 # 攻擊機: 啟動 reverse shell listener + payload 產生器（不需要 sudo）
@@ -158,7 +158,7 @@ exit
 
 ## IP 切換原理 (繞過網路層 MDR 封鎖)
 
-藍軍網路 MDR（`blue_mdr_network.py`）以 iptables DROP 封鎖觸碰蜜罐的 IP。紅隊透過 IP alias 掛載第二個 IP 繞過封鎖。
+藍軍的網路 MDR（`blue_mdr_network.py`）會用 iptables DROP 封鎖碰蜜罐的 IP。我們用 IP alias 多掛一個 IP 繞過去。
 
 | IP | 用途 | 結果 |
 |----|------|------|
@@ -167,11 +167,13 @@ exit
 
 管理指令: `bash red_team/ip_switch.sh add` / `remove` / `status`
 
-> **注意**：IP alias 只繞過網路層封鎖。如果藍軍同時啟動 eBPF，行為偵測仍然有效（不依賴 IP）。
+> IP alias 只能繞過網路層封鎖。如果藍軍同時有開 eBPF，行為偵測照樣有效（跟 IP 無關）。
 
 ---
 
 ## MITRE ATT&CK 對應
+
+這邊整理一下我們用到的 MITRE ATT&CK technique，方便報告裡引用。
 
 | 戰術 | 技術 ID | 說明 | 對應階段 |
 |------|---------|------|----------|
@@ -189,7 +191,7 @@ exit
 | Defense Evasion | T1070.003 | Clear Command History | Phase 6: history -c |
 | Defense Evasion | T1070.004 | File Deletion | exfil_agent 自刪 |
 
-**刻意排除：** Privilege Escalation、Impact (控制爆炸半徑)
+Privilege Escalation 和 Impact 我們沒有做，主要是控制演練的影響範圍。
 
 ---
 
@@ -211,12 +213,12 @@ exit
 
 ---
 
-## 注意事項
+## 備忘
 
-1. **Port 2222 是蜜罐** — 觸碰會被網路 MDR 封鎖 IP，Demo 時用主 IP 觸發後用 `ip_switch.sh` 切換備用 IP
-2. **替換 IP** — 使用前將 `<TARGET_IP>` 和 `<ATTACKER_IP>` / `<WSL2_IP>` 替換為實際 IP
-3. **venv 環境** — 所有 Python 工具用 `.venv/bin/python3` 執行，需要 sudo 的用 `sudo .venv/bin/python3`
-4. **純 CLI 操作** — 本演練禁止使用圖形化工具
-5. **爆炸半徑控制** — 不進行提權和破壞性操作
-6. **完整 Demo 腳本** — 請參考 `docs/DEMO_FLOW.md` 取得 7 回合完整演練流程
-7. **環境重置** — Demo 結束後執行 `sudo bash cleanup.sh` 一鍵清除所有殘留（程序、iptables、log、loot、crontab）
+1. **Port 2222 是蜜罐** — 碰了會被 MDR 封 IP，Demo 的時候先用主 IP 觸發，再用 `ip_switch.sh` 切備用 IP
+2. **記得換 IP** — 用之前把 `<TARGET_IP>` 和 `<ATTACKER_IP>` / `<WSL2_IP>` 換成實際的 IP
+3. **venv 環境** — Python 工具都用 `.venv/bin/python3` 跑，需要 sudo 的就 `sudo .venv/bin/python3`
+4. **純 CLI** — 演練全程不用 GUI 工具
+5. **不做提權和破壞** — 控制影響範圍就好
+6. **完整 Demo 腳本** — 看 `docs/DEMO_FLOW.md`，有 7 回合的完整流程
+7. **收尾** — Demo 完跑 `sudo bash cleanup.sh` 清掉殘留（程序、iptables、log、loot、crontab）

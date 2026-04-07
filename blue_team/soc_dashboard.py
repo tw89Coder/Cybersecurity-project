@@ -1,28 +1,15 @@
 #!/usr/bin/env python3
 """
 soc_dashboard.py - Real-time SOC Monitoring Dashboard
-================================================================================
-A web-based Security Operations Center dashboard that aggregates events from
-all blue team tools and displays them in real-time.
 
-Data sources:
-  - trap.log         : Honeypot connection events (from honeypot.py)
-  - soc_events.jsonl : eBPF alerts + iptables blocks (from other blue tools)
-
-Features:
-  - Dark-theme SOC console UI
-  - Real-time event streaming (Server-Sent Events)
-  - Stats cards: total events, blocked IPs, kills, active threats
-  - Color-coded severity (CRITICAL/HIGH/MEDIUM/INFO)
-  - Auto-scroll event timeline
+Flask web UI that aggregates events from trap.log and soc_events.jsonl
+and streams them to the browser via SSE. Dark-theme console with
+severity-coded event timeline and stats cards.
 
 Usage:
   python3 soc_dashboard.py                                # defaults
   python3 soc_dashboard.py --port 8080 --trap-log trap.log
   python3 soc_dashboard.py --soc-log soc_events.jsonl
-
-Then open http://localhost:8080 in a browser.
-================================================================================
 """
 import os
 import sys

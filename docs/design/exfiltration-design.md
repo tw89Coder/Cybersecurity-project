@@ -1,8 +1,8 @@
-# Exfiltration 隱蔽通道設計規格
+# Exfiltration 隱蔽通道設計
 
 ## 目標
 
-為紅隊 kill chain 加入 Exfiltration (TA0010) 階段，透過 DNS 和 ICMP 隱蔽通道將靶機資料外傳至攻擊機，完全繞過藍軍 tshark (`tcp port 9999`) 監控。
+在紅隊 kill chain 加入 Exfiltration (TA0010) 階段，用 DNS 跟 ICMP 隱蔽通道把靶機資料外傳到攻擊機，繞過藍軍的 tshark (`tcp port 9999`) 監控。
 
 ## 架構
 
