@@ -81,10 +81,13 @@ sudo .venv/bin/python3 target/honeypot.py
 =======================================================
   Honeypot (Fake SSH) | 0.0.0.0:2222
   Banner: SSH-2.0-OpenSSH_8.9p1 Ubuntu-3ubuntu0.4
-  Log:    /home/.../trap.log
+  Log:    /home/<user>/cybersecurity/trap.log
 =======================================================
 [*] Waiting for connections...
 ```
+
+> **注意**：trap.log 路徑會自動解析為專案根目錄（不管從哪裡啟動都一樣）。
+> 蜜罐和 MDR 不需要手動指定 `--log`，除非你想用自訂路徑。
 
 ### T2 — 啟動網路層 MDR
 
@@ -98,11 +101,13 @@ sudo .venv/bin/python3 blue_team/blue_mdr_network.py --cleanup
 |   Blue Team  Network MDR  v1.0                     |
 |   Honeypot Trap Monitor + iptables Auto-Block       |
 +====================================================+
-  Log file : /home/.../trap.log
+  Log file : /home/<user>/cybersecurity/trap.log
   Cleanup  : YES
 
 [*] Monitoring trap.log...
 ```
+
+> **重要**：MDR 必須在蜜罐**之後或同時**啟動。如果 trap.log 已有舊資料（上次 demo 殘留），MDR 會跳過既有內容，只監控新增的。建議每次 demo 前先 `sudo bash cleanup.sh` 清除舊 log。
 
 ### T4 — 紅方偵察
 
