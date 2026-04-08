@@ -92,6 +92,18 @@ nmap         memfd_create       SSTI POST      fork+execve      記憶體駐留 
              + AES-256-CTR      透過 curl      從 /proc/fd      agent         隱蔽通道
 ```
 
+#### Kill Chain 涵蓋範圍
+
+| 階段 | Kill Chain 階段 | 我們的實作 | 工具 / 技術 | Demo 回合 |
+|------|---------------|----------|-----------|----------|
+| 1 | Reconnaissance（偵察） | Port scanning 和 service enumeration 來辨識目標 | nmap（`recon.sh`） | 回合 1 |
+| 2 | Weaponization（武器化） | 建立 fileless payload，使用 AES-256-CTR 加密的 C2 agent；透過 `memfd_create` 建立匿名記憶體檔案 | `red_attacker.py`、OpenSSL libcrypto via ctypes | 回合 2 |
+| 3 | Delivery（投遞） | 透過有漏洞的 Flask app 的 SSTI injection 投遞 payload | curl POST 到 `/diag` endpoint | 回合 2 |
+| 4 | Exploitation（利用） | 觸發 Jinja2 template evaluation 達成 RCE；`fork()` + `execve()` 從 `/proc/pid/fd` 啟動 agent | Flask/Jinja2 SSTI（CWE-1336） | 回合 2 |
+| 5 | Installation（安裝） | Agent 完全在記憶體中執行，不留任何 filesystem 痕跡；只要 process 存活就持續運作 | `memfd_create` + in-memory execution | 回合 2 |
+| 6 | Command and Control（命令與控制） | 加密的雙向 ICMP covert channel C2；後續升級為 TCP reverse shell 和 DNS/ICMP exfiltration | ICMP C2（回合 2）、TCP reverse shell（回合 5）、DNS/ICMP exfil（回合 7） | 回合 2、5、7 |
+| 7 | Actions on Objectives（目標行動） | **未實作**——基於安全考量刻意排除（lab 環境不做破壞性操作） | N/A | N/A |
+
 ### 2.2 MITRE ATT&CK Framework
 
 MITRE ATT&CK 是一個根據真實攻擊行為整理出來的知識庫 [4]。我們把這次實作的所有技術都 mapping 到對應的 ATT&CK technique ID：

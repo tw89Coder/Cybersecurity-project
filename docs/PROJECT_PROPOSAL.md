@@ -90,6 +90,18 @@ nmap         memfd_create       SSTI POST      fork+execve      in-memory     IC
              + AES-256-CTR      via curl       from /proc/fd    agent         covert channel
 ```
 
+#### Kill Chain Coverage
+
+| Phase | Kill Chain Stage | Our Implementation | Tools / Techniques | Demo Round |
+|-------|-----------------|-------------------|-------------------|------------|
+| 1 | Reconnaissance | Port scanning and service enumeration to identify targets | nmap (`recon.sh`) | Round 1 |
+| 2 | Weaponization | Build fileless payload with AES-256-CTR encrypted C2 agent; create anonymous in-memory file via `memfd_create` | `red_attacker.py`, OpenSSL libcrypto via ctypes | Round 2 |
+| 3 | Delivery | Deliver payload through SSTI injection in the vulnerable Flask app | curl POST to `/diag` endpoint | Round 2 |
+| 4 | Exploitation | Trigger Jinja2 template evaluation to achieve RCE; `fork()` + `execve()` from `/proc/pid/fd` to launch agent | Flask/Jinja2 SSTI (CWE-1336) | Round 2 |
+| 5 | Installation | Agent runs entirely in memory with no filesystem footprint; persists as long as the process lives | `memfd_create` + in-memory execution | Round 2 |
+| 6 | Command and Control | Encrypted bidirectional C2 over ICMP covert channel; later escalates to TCP reverse shell and DNS/ICMP exfiltration | ICMP C2 (Round 2), TCP reverse shell (Round 5), DNS/ICMP exfil (Round 7) | Rounds 2, 5, 7 |
+| 7 | Actions on Objectives | **Not implemented** — excluded by design for safety (no destructive operations in the lab) | N/A | N/A |
+
 ### 2.2 MITRE ATT&CK Framework
 
 MITRE ATT&CK is a knowledge base of adversary behavior based on real-world observations [4]. We map all our implemented techniques to ATT&CK identifiers:
