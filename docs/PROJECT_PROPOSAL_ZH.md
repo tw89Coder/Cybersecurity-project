@@ -544,7 +544,7 @@ ls -la loot/
 
 **Data exfiltration 是目前防禦的盲點。** 即使兩層防禦同時運作，紅隊仍然透過 DNS subdomain encoding 和 ICMP payload embedding 成功將靶機上的敏感檔案（`/etc/passwd`、SSH key、bash history）外傳到攻擊機。eBPF 監控的是 process-level 的 syscall 行為（memfd_create、reverse shell 的 fd hijack），而 DNS exfiltration 走的是正常的 UDP 53 查詢，不觸發任何被監控的 pattern。這說明 defense-in-depth 是一個持續的過程——部署完不代表結束，防禦者必須不斷擴展偵測面來覆蓋新的攻擊向量。
 
-總結來說，我們成功實作了 13 項 MITRE ATT&CK 攻擊技術（涵蓋 10 個戰術類別）和 7 項對應的偵測能力，橫跨兩個防禦層，在一個受控、可重現的環境中完成了一次從偵察到資料竊取的完整攻防演練。
+總結來說，我們成功實作了 13 項 MITRE ATT&CK 攻擊技術（涵蓋 9 個戰術類別）和 7 項對應的偵測能力，橫跨兩個防禦層，在一個受控、可重現的環境中完成了一次從偵察到資料竊取的完整攻防演練。
 
 ---
 

@@ -540,7 +540,7 @@ Fileless techniques pose a real challenge to traditional defenses. The C2 agent 
 
 Data exfiltration remains a blind spot in the current defense architecture. Even with both defense layers active, the red team successfully extracted sensitive files (`/etc/passwd`, SSH keys, bash history) from the target via DNS subdomain encoding and ICMP payload embedding. The eBPF hooks monitor process-level syscall behavior (memfd_create, reverse shell fd hijacking), but DNS exfiltration uses standard UDP port 53 queries that do not trigger any monitored patterns. This demonstrates that defense-in-depth is an ongoing process -- deployment is not the finish line, and defenders must continuously expand their detection surface to cover new attack vectors.
 
-Overall, the project implements 13 ATT&CK techniques (spanning 10 tactic categories) and 7 corresponding detection capabilities across two defense layers, giving us hands-on experience with both offensive and defensive operations in a controlled environment -- including the discovery that data exfiltration through covert channels remains undetected by the current behavioral monitoring approach.
+Overall, the project implements 13 ATT&CK techniques (spanning 9 tactic categories) and 7 corresponding detection capabilities across two defense layers, giving us hands-on experience with both offensive and defensive operations in a controlled environment -- including the discovery that data exfiltration through covert channels remains undetected by the current behavioral monitoring approach.
 
 ---
 
