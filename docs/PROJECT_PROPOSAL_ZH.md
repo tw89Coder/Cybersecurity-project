@@ -83,13 +83,13 @@
 
 Lockheed Martin 的 Cyber Kill Chain 是 Hutchins、Cloppert 和 Amin 在 2011 年提出的框架 [3]，把網路攻擊拆成七個階段來分析：Reconnaissance、Weaponization、Delivery、Exploitation、Installation、C2、Actions on Objectives。
 
-我們的專案實作了其中六個階段（基於安全考量排除 Actions on Objectives），每個階段都對應到具體的工具跟技術：
+我們的專案實作了完整的七個階段，每個階段都對應到具體的工具跟技術：
 
 ```
-階段 1        階段 2           階段 3        階段 4          階段 5       階段 6
-偵察    →   武器化      →   投遞     →   利用       →   安裝    →   命令與控制
-nmap         memfd_create       SSTI POST      fork+execve      記憶體駐留     ICMP/TCP
-             + AES-256-CTR      透過 curl      從 /proc/fd      agent         隱蔽通道
+階段 1        階段 2           階段 3        階段 4          階段 5       階段 6          階段 7
+偵察    →   武器化      →   投遞     →   利用       →   安裝    →   命令與控制  →   資料竊取
+nmap         memfd_create       SSTI POST      fork+execve      記憶體駐留     ICMP/TCP         DNS/ICMP
+             + AES-256-CTR      透過 curl      從 /proc/fd      agent         隱蔽通道         資料外洩
 ```
 
 #### Kill Chain 涵蓋範圍
@@ -101,8 +101,8 @@ nmap         memfd_create       SSTI POST      fork+execve      記憶體駐留 
 | 3 | Delivery（投遞） | 透過有漏洞的 Flask app 的 SSTI injection 投遞 payload | curl POST 到 `/diag` endpoint | 回合 2 |
 | 4 | Exploitation（利用） | 觸發 Jinja2 template evaluation 達成 RCE；`fork()` + `execve()` 從 `/proc/pid/fd` 啟動 agent | Flask/Jinja2 SSTI（CWE-1336） | 回合 2 |
 | 5 | Installation（安裝） | Agent 完全在記憶體中執行，不留任何 filesystem 痕跡；只要 process 存活就持續運作 | `memfd_create` + in-memory execution | 回合 2 |
-| 6 | Command and Control（命令與控制） | 加密的雙向 ICMP covert channel C2；後續升級為 TCP reverse shell 和 DNS/ICMP exfiltration | ICMP C2（回合 2）、TCP reverse shell（回合 5）、DNS/ICMP exfil（回合 7） | 回合 2、5、7 |
-| 7 | Actions on Objectives（目標行動） | **未實作**——基於安全考量刻意排除（lab 環境不做破壞性操作） | N/A | N/A |
+| 6 | Command and Control（命令與控制） | 加密的雙向 ICMP covert channel C2；後續升級為 TCP reverse shell 以規避 eBPF 偵測 | ICMP C2（回合 2）、TCP reverse shell（回合 5） | 回合 2、5 |
+| 7 | Actions on Objectives（目標行動） | 竊取敏感檔案（`/etc/passwd`、SSH keys、bash history）透過 DNS 和 ICMP 隱蔽通道外洩；資料經過分塊、編碼後傳送至攻擊者控制的 listener | `exfil_agent.py`、`exfil_listener.py`、DNS subdomain encoding + ICMP padding（T1048.003） | 回合 7 |
 
 ### 2.2 MITRE ATT&CK Framework
 

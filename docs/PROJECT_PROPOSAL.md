@@ -81,13 +81,13 @@ Every step is documented with exact commands and expected outputs in `docs/DEMO_
 
 The Lockheed Martin Cyber Kill Chain [3] breaks down a cyberattack into seven sequential phases: Reconnaissance, Weaponization, Delivery, Exploitation, Installation, Command and Control (C2), and Actions on Objectives.
 
-We implement six of the seven phases (excluding Actions on Objectives for safety reasons):
+We implement all seven phases of the Kill Chain:
 
 ```
-Phase 1        Phase 2           Phase 3        Phase 4          Phase 5       Phase 6
-Recon    →   Weaponize     →   Deliver    →   Exploit      →   Install   →   C2
-nmap         memfd_create       SSTI POST      fork+execve      in-memory     ICMP/TCP
-             + AES-256-CTR      via curl       from /proc/fd    agent         covert channel
+Phase 1        Phase 2           Phase 3        Phase 4          Phase 5       Phase 6          Phase 7
+Recon    →   Weaponize     →   Deliver    →   Exploit      →   Install   →   C2           →   Exfiltrate
+nmap         memfd_create       SSTI POST      fork+execve      in-memory     ICMP/TCP         DNS/ICMP
+             + AES-256-CTR      via curl       from /proc/fd    agent         covert channel   data theft
 ```
 
 #### Kill Chain Coverage
@@ -99,8 +99,8 @@ nmap         memfd_create       SSTI POST      fork+execve      in-memory     IC
 | 3 | Delivery | Deliver payload through SSTI injection in the vulnerable Flask app | curl POST to `/diag` endpoint | Round 2 |
 | 4 | Exploitation | Trigger Jinja2 template evaluation to achieve RCE; `fork()` + `execve()` from `/proc/pid/fd` to launch agent | Flask/Jinja2 SSTI (CWE-1336) | Round 2 |
 | 5 | Installation | Agent runs entirely in memory with no filesystem footprint; persists as long as the process lives | `memfd_create` + in-memory execution | Round 2 |
-| 6 | Command and Control | Encrypted bidirectional C2 over ICMP covert channel; later escalates to TCP reverse shell and DNS/ICMP exfiltration | ICMP C2 (Round 2), TCP reverse shell (Round 5), DNS/ICMP exfil (Round 7) | Rounds 2, 5, 7 |
-| 7 | Actions on Objectives | **Not implemented** — excluded by design for safety (no destructive operations in the lab) | N/A | N/A |
+| 6 | Command and Control | Encrypted bidirectional C2 over ICMP covert channel; later escalates to TCP reverse shell to evade eBPF detection | ICMP C2 (Round 2), TCP reverse shell (Round 5) | Rounds 2, 5 |
+| 7 | Actions on Objectives | Exfiltrate sensitive files (`/etc/passwd`, SSH keys, bash history) via DNS and ICMP covert channels; data is chunked, encoded, and sent to attacker-controlled listener | `exfil_agent.py`, `exfil_listener.py`, DNS subdomain encoding + ICMP padding (T1048.003) | Round 7 |
 
 ### 2.2 MITRE ATT&CK Framework
 
