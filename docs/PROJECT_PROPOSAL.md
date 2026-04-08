@@ -27,9 +27,11 @@
 
 ### 1.1 Project Motivation
 
-Most network security courses teach attacks and defenses separately -- students learn about vulnerability categories, study defense checklists, and maybe run a few Wireshark captures. But real-world security is adversarial and iterative: attackers adapt when they get blocked, defenders upgrade when they get bypassed, and this back-and-forth never really stops. That gap between textbook knowledge and practical experience is what this project tries to address.
+According to IBM's 2024 Cost of a Data Breach Report, the global average cost of a data breach has reached $4.88 million, with stolen credentials and phishing remaining the most common initial attack vectors [1]. Meanwhile, APT groups increasingly use covert channels such as ICMP tunneling and DNS exfiltration to maintain C2 connections, bypassing network-level security controls. Prior research has shown that the ICMP protocol lacks port-based multiplexing, making its data field easy to abuse as a covert channel [2], and MITRE ATT&CK documents ICMP-based C2 in tools like PingPull, Regin, and Cobalt Strike [4].
 
-The specific attack surface we focus on is covert C2 channels, particularly ICMP tunneling. ICMP is a good case study because most firewalls let it through (blocking it breaks ping and traceroute), and its data payload field is essentially unmonitored in most environments [2]. Real APT groups already exploit this -- MITRE ATT&CK documents ICMP-based C2 in tools like PingPull, Regin, and Cobalt Strike [4]. On the defense side, we use eBPF to do kernel-level behavioral detection, which is interesting because it can catch malicious activity regardless of how well the attacker encrypts their traffic.
+However, most network security courses still lean heavily toward theory -- students learn about vulnerability categories, study defense checklists, and maybe run a few Wireshark captures, but rarely get hands-on experience with both attacking and defending. The gap between what is taught in the classroom and what is practiced in real operations is significant. This is the starting point for our project: we want to build a controlled, reproducible attack-defense lab environment where participants can walk through a complete attack lifecycle -- from reconnaissance and exploitation to exfiltration -- while also implementing the corresponding defensive mechanisms and observing how both sides escalate against each other.
+
+Another idea driving this project is that attack and defense are not one-time events but a continuous adversarial process. When you block one attack, the attacker changes tactics; when you upgrade detection, they find new evasion techniques. We designed the exercise as a multi-round engagement where both sides progressively escalate, so participants can appreciate the iterative nature of real-world cybersecurity operations. On the defense side, we use eBPF to do kernel-level behavioral detection, which is interesting because it can catch malicious activity regardless of how well the attacker encrypts their traffic.
 
 ### 1.2 Project Objectives
 
@@ -38,7 +40,9 @@ The goal is to build a controlled red-blue team exercise where both sides escala
 1. Implement a realistic attack chain covering reconnaissance through C2, mapped to the MITRE ATT&CK framework and the Cyber Kill Chain model.
 2. Build a defense-in-depth setup with two layers -- network-level deception (honeypot + firewall blocking) and kernel-level behavioral detection (eBPF syscall monitoring with real-time process termination).
 3. Structure the exercise as a 7-round engagement where the red team develops evasion techniques and the blue team upgrades detection in response, so students can see how this adversarial cycle actually plays out.
-4. Tie everything together with a SOC dashboard that gives the blue team a unified view of what is happening across all defensive components.
+4. Introduce production-grade encryption -- upgrade the covert channel encryption from a teaching-oriented XOR cipher to AES-256-CTR (via ctypes calling OpenSSL), demonstrating that behavioral detection remains equally effective under strong encryption.
+5. Tie everything together with a SOC dashboard that gives the blue team a unified view of what is happening across all defensive components.
+6. Ensure safety and reproducibility -- all activities run in an isolated environment with no privilege escalation, no destructive operations, and all artifacts kept in memory or ephemeral.
 
 ### 1.3 Operational Principles
 
@@ -124,9 +128,13 @@ We deploy a low-interaction honeypot emulating an SSH server on port 2222. When 
 
 ### 2.5 AES-256-CTR Encryption via OpenSSL
 
-AES in Counter (CTR) mode is a NIST-standardized symmetric encryption scheme [8]. AES-256-CTR works as a stream cipher: it encrypts successive counter values with AES-256 to produce a keystream, then XORs that keystream with the plaintext.
+AES in Counter (CTR) mode is a NIST-standardized symmetric encryption scheme [8]. AES-256-CTR works as a stream cipher: it encrypts successive counter values with AES-256 to produce a keystream, then XORs that keystream with the plaintext. Several properties make it well-suited for our use case:
 
-We use CTR mode for the C2 channel because it does not require padding (ciphertext is the same length as plaintext, which matters for ICMP payloads with size constraints), and with a random IV per message, identical plaintexts produce different ciphertexts. The implementation calls OpenSSL's libcrypto through Python ctypes, so we get real encryption without needing any pip-installed packages.
+- **IND-CPA security**: With a random IV per message, identical plaintexts produce different ciphertexts, preventing pattern analysis.
+- **No padding required**: CTR mode produces ciphertext of the same length as the plaintext, which is important for network protocols with size constraints such as ICMP.
+- **Parallelizable**: Counter blocks are independent of each other, enabling hardware acceleration.
+
+The implementation calls OpenSSL's libcrypto through Python ctypes, so we get production-grade encryption without needing any pip-installed packages.
 
 ---
 
@@ -510,6 +518,8 @@ The 7-round structure makes this concrete. When eBPF v1 killed the fileless ICMP
 The encryption upgrade from XOR to AES-256-CTR is also instructive. Making the C2 traffic unreadable through payload inspection did nothing to stop eBPF detection, because eBPF watches what the process *does* (which syscalls it makes) rather than what the traffic *contains*. This is a useful lesson for understanding why behavioral detection matters.
 
 On the visibility side, the SOC dashboard turned out to be more useful than expected for understanding the full attack picture. Without it, the blue team would be looking at isolated log files from different components and trying to mentally piece together what happened.
+
+Fileless techniques pose a real challenge to traditional defenses. The C2 agent running entirely in memory via `memfd_create` leaves no filesystem trace whatsoever -- conventional antivirus and forensic tools simply cannot see it. This demonstrates the necessity of kernel-level behavioral monitoring like eBPF, which observes what processes do rather than scanning for files on disk.
 
 Overall, the project implements 7 ATT&CK techniques and 7 corresponding detection capabilities across two defense layers, giving us hands-on experience with both offensive and defensive operations in a controlled environment.
 
