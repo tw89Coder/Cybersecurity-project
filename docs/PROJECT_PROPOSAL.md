@@ -37,7 +37,7 @@ Another idea driving this project is that attack and defense are not one-time ev
 
 The goal is to build a controlled red-blue team exercise where both sides escalate over multiple rounds. Specifically, we want to:
 
-1. Implement a realistic attack chain covering reconnaissance through C2, mapped to the MITRE ATT&CK framework and the Cyber Kill Chain model.
+1. Implement a realistic attack chain covering reconnaissance through actions on objectives (data exfiltration), mapped to the MITRE ATT&CK framework and the Cyber Kill Chain model.
 2. Build a defense-in-depth setup with two layers -- network-level deception (honeypot + firewall blocking) and kernel-level behavioral detection (eBPF syscall monitoring with real-time process termination).
 3. Structure the exercise as a 7-round engagement where the red team develops evasion techniques and the blue team upgrades detection in response, so students can see how this adversarial cycle actually plays out.
 4. Introduce production-grade encryption -- upgrade the covert channel encryption from a teaching-oriented XOR cipher to AES-256-CTR (via ctypes calling OpenSSL), demonstrating that behavioral detection remains equally effective under strong encryption.
@@ -116,6 +116,11 @@ MITRE ATT&CK is a knowledge base of adversary behavior based on real-world obser
 | Command and Control | T1095 | Non-Application Layer Protocol | ICMP covert channel + TCP reverse shell |
 | Command and Control | T1571 | Non-Standard Port | C2 and reverse shell on port 4444 |
 | Exfiltration | T1048.003 | Exfiltration Over Alternative Protocol | DNS/ICMP data exfiltration |
+| Persistence | T1053.003 | Scheduled Task/Job: Cron | Crontab reverse shell implant (post-exploitation) |
+| Discovery | T1082 | System Information Discovery | whoami, id, uname -a (post-exploitation reconnaissance) |
+| Collection | T1005 | Data from Local System | Exfil agent collects /etc/passwd, SSH keys, bash history from target |
+| Defense Evasion | T1070.003 | Indicator Removal: Clear Command History | history -c (trace cleanup) |
+| Defense Evasion | T1070.004 | Indicator Removal: File Deletion | Exfil agent self-deletes after completion |
 
 Note on T1620: We use Reflective Code Loading rather than T1055.009 (Proc Memory) because our technique executes code from the process's own anonymous file descriptor (`/proc/self/fd/N` via `execve`), not by injecting into another process's address space via `/proc/[pid]/mem`. The distinction matters -- T1055.009 describes cross-process injection, while our attack is self-contained in-memory execution.
 
@@ -533,7 +538,9 @@ On the visibility side, the SOC dashboard turned out to be more useful than expe
 
 Fileless techniques pose a real challenge to traditional defenses. The C2 agent running entirely in memory via `memfd_create` leaves no filesystem trace whatsoever -- conventional antivirus and forensic tools simply cannot see it. This demonstrates the necessity of kernel-level behavioral monitoring like eBPF, which observes what processes do rather than scanning for files on disk.
 
-Overall, the project implements 7 ATT&CK techniques and 7 corresponding detection capabilities across two defense layers, giving us hands-on experience with both offensive and defensive operations in a controlled environment.
+Data exfiltration remains a blind spot in the current defense architecture. Even with both defense layers active, the red team successfully extracted sensitive files (`/etc/passwd`, SSH keys, bash history) from the target via DNS subdomain encoding and ICMP payload embedding. The eBPF hooks monitor process-level syscall behavior (memfd_create, reverse shell fd hijacking), but DNS exfiltration uses standard UDP port 53 queries that do not trigger any monitored patterns. This demonstrates that defense-in-depth is an ongoing process -- deployment is not the finish line, and defenders must continuously expand their detection surface to cover new attack vectors.
+
+Overall, the project implements 13 ATT&CK techniques (spanning 10 tactic categories) and 7 corresponding detection capabilities across two defense layers, giving us hands-on experience with both offensive and defensive operations in a controlled environment -- including the discovery that data exfiltration through covert channels remains undetected by the current behavioral monitoring approach.
 
 ---
 

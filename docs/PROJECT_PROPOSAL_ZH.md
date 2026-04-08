@@ -37,7 +37,7 @@
 
 我們這個專案要做的事情包含以下幾個面向：
 
-- **走完一條完整的 Cyber Kill Chain**——從 reconnaissance、weaponization、delivery、exploitation、installation 到 C2，每個階段都有對應的實作，並且 mapping 到 MITRE ATT&CK framework。
+- **走完一條完整的 Cyber Kill Chain**——從 reconnaissance、weaponization、delivery、exploitation、installation、C2 到 actions on objectives（資料竊取），每個階段都有對應的實作，並且 mapping 到 MITRE ATT&CK framework。
 - **做出兩層 defense-in-depth 架構**——網路層用 honeypot 搭配 iptables 自動封鎖，kernel 層用 eBPF 監控 syscall 並即時 kill process。用這個架構來說明為什麼單一防禦不夠。
 - **展現攻防升級的過程**——整個演練總共 7 個回合，紅藍隊輪流適應對方。紅隊被擋住就換 evasion 技術，藍隊就針對新的行為升級偵測能力。
 - **導入 production-grade 加密**——把 covert channel 的加密從教學用的 XOR cipher 升級到 AES-256-CTR（透過 ctypes 呼叫 OpenSSL），順便證明 behavioral detection 在強加密下一樣有效。
@@ -118,6 +118,11 @@ MITRE ATT&CK 是一個根據真實攻擊行為整理出來的知識庫 [4]。我
 | C2 | T1095 | Non-Application Layer Protocol | ICMP covert channel + TCP reverse shell |
 | C2 | T1571 | Non-Standard Port | C2 和 reverse shell 用 port 4444 |
 | Exfiltration | T1048.003 | Exfiltration Over Alternative Protocol | DNS/ICMP data exfiltration |
+| Persistence | T1053.003 | Scheduled Task/Job: Cron | crontab 植入反向 shell（後滲透階段） |
+| Discovery | T1082 | System Information Discovery | whoami、id、uname -a（後滲透情報蒐集） |
+| Collection | T1005 | Data from Local System | exfil agent 蒐集 /etc/passwd、SSH key、bash history 等本機檔案 |
+| Defense Evasion | T1070.003 | Indicator Removal: Clear Command History | history -c（清除操作痕跡） |
+| Defense Evasion | T1070.004 | Indicator Removal: File Deletion | exfil agent 完成後自動刪除自身 |
 
 關於 T1620 的說明：我們用 Reflective Code Loading 而不是 T1055.009（Proc Memory），因為我們的技術是從 process 自己的 anonymous file descriptor（`/proc/self/fd/N` 透過 `execve`）執行 code，不是注入到別的 process 的 address space（via `/proc/[pid]/mem`）。T1055.009 描述的是跨 process 的 injection，我們的攻擊是 self-contained 的 in-memory execution。
 
@@ -537,7 +542,9 @@ ls -la loot/
 
 **Fileless 技術對傳統防禦是個挑戰。** 透過 `memfd_create` 完全在 memory 裡跑的 C2 agent，不留下任何 filesystem trace，傳統的防毒跟鑑識工具都看不到。這也證明了像 eBPF 這種 kernel-level behavioral monitoring 的必要性。
 
-總結來說，我們成功實作了 7 項 MITRE ATT&CK 攻擊技術和 7 項對應的偵測能力，橫跨兩個防禦層，在一個受控、可重現的環境中完成了一次完整的攻防演練。
+**Data exfiltration 是目前防禦的盲點。** 即使兩層防禦同時運作，紅隊仍然透過 DNS subdomain encoding 和 ICMP payload embedding 成功將靶機上的敏感檔案（`/etc/passwd`、SSH key、bash history）外傳到攻擊機。eBPF 監控的是 process-level 的 syscall 行為（memfd_create、reverse shell 的 fd hijack），而 DNS exfiltration 走的是正常的 UDP 53 查詢，不觸發任何被監控的 pattern。這說明 defense-in-depth 是一個持續的過程——部署完不代表結束，防禦者必須不斷擴展偵測面來覆蓋新的攻擊向量。
+
+總結來說，我們成功實作了 13 項 MITRE ATT&CK 攻擊技術（涵蓋 10 個戰術類別）和 7 項對應的偵測能力，橫跨兩個防禦層，在一個受控、可重現的環境中完成了一次從偵察到資料竊取的完整攻防演練。
 
 ---
 
