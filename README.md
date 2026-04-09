@@ -7,11 +7,11 @@
 
 ## Team / 組員
 
-| Name | Role | Responsibilities |
-|------|------|-----------------|
-| 陳品叡 (M143040024) | Red Team | Reconnaissance, exploitation, C2 |
-| 呂易鴻 (M143140012) | Blue Team | eBPF detection, incident response |
-| 王承煜 (M143140017) | Target / Docs | Vulnerable app, reporting |
+| Role | Responsibilities |
+|------|-----------------|
+| Red Team | Reconnaissance, exploitation, C2 |
+| Blue Team | eBPF detection, incident response |
+| Target / Docs | Vulnerable app, reporting |
 
 ---
 
