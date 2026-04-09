@@ -417,13 +417,17 @@ sudo .venv/bin/python3 blue_team/blue_mdr_network.py --cleanup
 sudo bash red_team/recon.sh <TARGET_IP>
 # → 發現 port 2222（蜜罐）和 9999（真正目標）
 
+# WSL2 T4：先準備備用 IP（避免被封後斷線）
+sudo bash red_team/ip_switch.sh add
+# → 備用 IP 就緒，被封鎖後不會失去連線
+
 # WSL2 T4：碰蜜罐 → 被封鎖
 nc -v <TARGET_IP> 2222
-# → MDR 自動用 iptables 封鎖攻擊者 IP
+# → MDR 自動用 iptables 封鎖攻擊者原始 IP
 
-# WSL2 T4：用 IP alias 繞過
-bash red_team/ip_switch.sh add
-# → 新 IP 沒被封鎖，可以繼續打
+# WSL2 T4：用備用 IP 繼續攻擊
+curl -s --interface <BACKUP_IP> http://<TARGET_IP>:9999/
+# → 備用 IP 沒被封鎖，攻擊繼續
 ```
 
 ### 回合 2 — 紅隊攻擊成功（藍隊 OFF）

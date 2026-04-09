@@ -415,13 +415,17 @@ sudo .venv/bin/python3 blue_team/blue_mdr_network.py --cleanup
 sudo bash red_team/recon.sh <TARGET_IP>
 # → discovers port 2222 (honeypot) and 9999 (real target)
 
+# WSL2 T4: prepare backup IP BEFORE triggering honeypot
+sudo bash red_team/ip_switch.sh add
+# → backup IP ready, prevents lockout when original IP gets blocked
+
 # WSL2 T4: touch the honeypot → get blocked
 nc -v <TARGET_IP> 2222
-# → MDR auto-blocks attacker IP via iptables
+# → MDR auto-blocks attacker's original IP via iptables
 
-# WSL2 T4: bypass with IP alias
-bash red_team/ip_switch.sh add
-# → new IP is not blocked
+# WSL2 T4: continue attack using backup IP
+curl -s --interface <BACKUP_IP> http://<TARGET_IP>:9999/
+# → backup IP is not blocked, attack continues
 ```
 
 ### Round 2 — Red Team Attack (Blue OFF)

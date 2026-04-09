@@ -138,6 +138,14 @@ PORT     STATE SERVICE
 
 **目的**：展示蜜罐怎麼主動欺敵 — 碰到假服務就直接被封
 
+### T4 — 先準備備用 IP（避免被封後斷線）
+
+```bash
+sudo bash red_team/ip_switch.sh add
+```
+
+> **重要**：一定要在觸發蜜罐之前先掛好備用 IP！蜜罐觸發後原始 IP 會被 iptables 封鎖，如果沒有備用 IP 就會完全連不上 Lab 機器。
+
 ### T4 — 紅方嘗試連線 SSH（踩到蜜罐）
 
 ```bash
