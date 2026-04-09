@@ -414,7 +414,7 @@ sudo .venv/bin/python3 target/honeypot.py
 sudo .venv/bin/python3 blue_team/blue_mdr_network.py --cleanup
 
 # WSL2 T4：掃描目標
-bash red_team/recon.sh <TARGET_IP>
+sudo bash red_team/recon.sh <TARGET_IP>
 # → 發現 port 2222（蜜罐）和 9999（真正目標）
 
 # WSL2 T4：碰蜜罐 → 被封鎖

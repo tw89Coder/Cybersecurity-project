@@ -116,7 +116,7 @@ sudo .venv/bin/python3 blue_team/blue_mdr_network.py --cleanup
 ### T4 — 紅方偵察
 
 ```bash
-bash red_team/recon.sh <TARGET_IP>
+sudo bash red_team/recon.sh <TARGET_IP>
 ```
 
 預期輸出（重點）：

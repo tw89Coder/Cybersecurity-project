@@ -412,7 +412,7 @@ sudo .venv/bin/python3 target/honeypot.py
 sudo .venv/bin/python3 blue_team/blue_mdr_network.py --cleanup
 
 # WSL2 T4: scan target
-bash red_team/recon.sh <TARGET_IP>
+sudo bash red_team/recon.sh <TARGET_IP>
 # → discovers port 2222 (honeypot) and 9999 (real target)
 
 # WSL2 T4: touch the honeypot → get blocked
