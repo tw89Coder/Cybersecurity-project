@@ -9,9 +9,9 @@
 
 | Name | Role | Responsibilities |
 |------|------|-----------------|
-| <!-- add name --> | Red Team | Reconnaissance, exploitation, C2 |
-| <!-- add name --> | Blue Team | eBPF detection, incident response |
-| <!-- add name --> | Target / Docs | Vulnerable app, reporting |
+| 陳品叡 (M143040024) | Red Team | Reconnaissance, exploitation, C2 |
+| 呂易鴻 (M143140012) | Blue Team | eBPF detection, incident response |
+| 王承煜 (M143140017) | Target / Docs | Vulnerable app, reporting |
 
 ---
 
@@ -42,7 +42,7 @@
 │
 ├── docs/                       # Documentation & reports
 │   ├── DEMO_FLOW.md            #   Complete 7-round demo script
-│   ├── RED_TEAM_PLAYBOOK.md    #   Attack playbook (6-phase kill chain)
+│   ├── RED_TEAM_PLAYBOOK.md    #   Attack playbook (7-phase kill chain)
 │   ├── REPORT_ZH.md            #   Technical analysis report (Chinese)
 │   ├── REPORT_EN.md            #   Technical analysis report (English)
 │   ├── PROJECT_PROPOSAL.md     #   Project proposal (English)
@@ -64,8 +64,8 @@
 ### 1. Environment Setup / 環境安裝
 
 ```bash
-git clone https://github.com/<org>/<repo>.git
-cd <repo>
+git clone https://github.com/mickeytony0215-png/Cybersecurity-project.git
+cd Cybersecurity-project
 bash setup_env.sh
 ```
 
@@ -106,17 +106,18 @@ sudo .venv/bin/python3 red_team/red_attacker.py -t <TARGET_IP> -l <ATTACKER_IP>
 | Blue team v1 **ON** (`--kill`) | eBPF detects `memfd_create`, kills process before execution |
 | Red team **reverse shell** (v1 bypass) | TCP shell bypasses v1 detection entirely |
 | Blue team **v2 ON** (`--kill`) | Detects `connect()` to suspect port + `dup2` fd hijack, kills reverse shell |
+| Red team **exfiltration** (defense gap) | DNS/ICMP covert channels extract sensitive files; eBPF v2 does not detect |
 
 ---
 
 ## Kill Chain Overview / 攻擊鏈概覽
 
 ```
-Phase 1        Phase 2           Phase 3        Phase 4          Phase 5       Phase 6
-Recon    →   Weaponize     →   Deliver    →   Exploit      →   Install   →   C2
-nmap         memfd_create       SSTI POST      fork+execve      in-memory     ICMP
-recon.sh     + XOR ICMP C2      curl cmd       from /proc/fd    agent         commands
-             red_attacker.py    target_app.py                                 heartbeat
+Phase 1        Phase 2           Phase 3        Phase 4          Phase 5       Phase 6          Phase 7
+Recon    →   Weaponize     →   Deliver    →   Exploit      →   Install   →   C2           →   Exfiltrate
+nmap         memfd_create       SSTI POST      fork+execve      in-memory     ICMP/TCP         DNS/ICMP
+recon.sh     + AES-256-CTR      curl cmd       from /proc/fd    agent         covert channel   data theft
+             red_attacker.py    target_app.py                                                  exfil_agent.py
 
 Phase 5b (Evasion — bypasses blue v1, caught by v2)
 Evasion  →   Deliver    →   Exploit      →   C2
@@ -125,7 +126,7 @@ fork()       SSTI POST      connect()        TCP reverse
 reverse_shell.py             pty.spawn
 ```
 
-The main chain (phases 1-6) is the fileless ICMP C2 path. Phase 5b is the evasion variant -- a TCP reverse shell that sidesteps v1 detection but gets caught by v2's `connect()`/`dup2` hooks.
+The main chain (phases 1-7) covers the full Kill Chain from reconnaissance to data exfiltration. Phase 5b is the evasion variant -- a TCP reverse shell that sidesteps v1 detection but gets caught by v2's `connect()`/`dup2` hooks. Phase 7 demonstrates a defense gap: DNS/ICMP exfiltration goes undetected by the current eBPF hooks.
 
 ---
 
@@ -154,14 +155,19 @@ The main chain (phases 1-6) is the fileless ICMP C2 path. Phase 5b is the evasio
 
 | ID | Technique | Implementation |
 |----|-----------|---------------|
+| T1595 | Active Scanning | nmap SYN port scanning |
 | T1190 | Exploit Public-Facing App | SSTI injection |
 | T1059.006 | Python Execution | memfd loader + agent + reverse shell |
 | T1620 | Reflective Code Loading | `memfd_create` -> `execve` |
 | T1027 | Obfuscation | Double Base64 + AES-256-CTR |
-| T1095 | Non-App Layer Protocol | ICMP covert C2 |
-| T1095 | Non-App Layer Protocol | TCP reverse shell (raw TCP, port 4444) |
+| T1095 | Non-App Layer Protocol | ICMP covert C2 + TCP reverse shell |
 | T1571 | Non-Standard Port | C2 on port 4444 |
 | T1048.003 | Exfil Over Alternative Protocol | DNS/ICMP exfil |
+| T1053.003 | Scheduled Task: Cron | Crontab reverse shell persistence |
+| T1082 | System Information Discovery | whoami, id, uname (post-exploitation) |
+| T1005 | Data from Local System | Exfil agent collects /etc/passwd, SSH keys, history |
+| T1070.003 | Clear Command History | history -c |
+| T1070.004 | File Deletion | Exfil agent self-deletes after completion |
 
 ### Detection Coverage
 
