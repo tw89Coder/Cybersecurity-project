@@ -15,10 +15,16 @@ echo "[*] Target: $TARGET_IP"
 echo "[*] Port Range: $PORT_RANGE"
 echo ""
 
-# Phase 1a: Fast port discovery
-echo "[*] Phase 1a: TCP SYN Port Scan..."
-nmap -sS -p "$PORT_RANGE" --open -T4 "$TARGET_IP" -oN "$OUTPUT_DIR/port_scan.txt" 2>/dev/null || \
-nmap -sT -p "$PORT_RANGE" --open -T4 "$TARGET_IP" -oN "$OUTPUT_DIR/port_scan.txt"
+# Phase 1a: Fast port discovery (SYN scan — requires sudo)
+# MUST use -sS (SYN scan). The -sT fallback does full TCP connections,
+# which triggers the honeypot on port 2222 and gets us blocked.
+echo "[*] Phase 1a: TCP SYN Port Scan (requires sudo)..."
+if ! nmap -sS -p "$PORT_RANGE" --open -T4 "$TARGET_IP" -oN "$OUTPUT_DIR/port_scan.txt" 2>/dev/null; then
+    echo "[!] SYN scan failed — did you run with sudo?"
+    echo "[!] Do NOT use -sT fallback, it triggers the honeypot."
+    echo "[!] Usage: sudo bash recon.sh $TARGET_IP"
+    exit 1
+fi
 
 echo ""
 
