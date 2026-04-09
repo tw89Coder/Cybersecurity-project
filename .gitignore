@@ -29,3 +29,7 @@ loot/
 recon_results/
 *.pcap
 *.log
+
+# Personal slide references (not for repo)
+docs/RED_TEAM_SLIDES.md
+docs/RED_TEAM_SLIDES_EN.md

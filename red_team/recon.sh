@@ -22,13 +22,13 @@ nmap -sT -p "$PORT_RANGE" --open -T4 "$TARGET_IP" -oN "$OUTPUT_DIR/port_scan.txt
 
 echo ""
 
-# Phase 1b: Service version detection on discovered ports
-echo "[*] Phase 1b: Service Version Detection..."
-nmap -p "$PORT_RANGE" -sV "$TARGET_IP" -oN "$OUTPUT_DIR/service_scan.txt"
+# NOTE: We intentionally skip nmap -sV (service version detection) here.
+# -sV opens full TCP connections, which triggers the honeypot on port 2222
+# and causes blue_mdr_network.py to auto-block our IP before we even finish
+# scanning. The demo flow expects recon to complete cleanly, then the red
+# team manually touches the honeypot with nc in a separate step.
 
-echo ""
-
-# Phase 1c: Quick summary
+# Phase 1b: Quick summary
 echo "[*] ===== Scan Summary ====="
 echo "[*] Results saved to $OUTPUT_DIR/"
 echo ""

@@ -94,7 +94,7 @@ nmap         memfd_create       SSTI POST      fork+execve      in-memory     IC
 
 | Phase | Kill Chain Stage | Our Implementation | Tools / Techniques | Demo Round |
 |-------|-----------------|-------------------|-------------------|------------|
-| 1 | Reconnaissance | Port scanning and service enumeration to identify targets | nmap (`recon.sh`) | Round 1 |
+| 1 | Reconnaissance | Port scanning (SYN scan) to identify targets | nmap (`recon.sh`) | Round 1 |
 | 2 | Weaponization | Build fileless payload with AES-256-CTR encrypted C2 agent; create anonymous in-memory file via `memfd_create` | `red_attacker.py`, OpenSSL libcrypto via ctypes | Round 2 |
 | 3 | Delivery | Deliver payload through SSTI injection in the vulnerable Flask app | curl POST to `/diag` endpoint | Round 2 |
 | 4 | Exploitation | Trigger Jinja2 template evaluation to achieve RCE; `fork()` + `execve()` from `/proc/pid/fd` to launch agent | Flask/Jinja2 SSTI (CWE-1336) | Round 2 |
@@ -108,7 +108,7 @@ MITRE ATT&CK is a knowledge base of adversary behavior based on real-world obser
 
 | Tactic | Technique ID | Technique Name | Implementation |
 |--------|-------------|----------------|----------------|
-| Reconnaissance | T1595 | Active Scanning | nmap port and service scanning |
+| Reconnaissance | T1595 | Active Scanning | nmap SYN port scanning |
 | Initial Access | T1190 | Exploit Public-Facing Application | SSTI injection via Flask/Jinja2 |
 | Execution | T1059.006 | Command and Scripting Interpreter: Python | memfd loader, reverse shell, C2 agent |
 | Defense Evasion | T1620 | Reflective Code Loading | memfd_create + execve from /proc/pid/fd |
@@ -141,7 +141,7 @@ In this project, we hook six tracepoints: `sys_enter_memfd_create`, `sys_enter_e
 
 Cyber deception uses decoy systems to detect and analyze adversary behavior [7]. A honeypot is a security resource that has no legitimate purpose -- any interaction with it is inherently suspicious.
 
-We deploy a low-interaction honeypot emulating an SSH server on port 2222. When an attacker connects during reconnaissance, the honeypot logs the source IP and triggers automated firewall blocking via iptables. Since no legitimate user has any reason to connect to this service, every connection is unauthorized by definition, which means zero false positives.
+We deploy a low-interaction honeypot emulating an SSH server [12] on port 2222. When an attacker connects during reconnaissance, the honeypot logs the source IP and triggers automated firewall blocking via iptables. Since no legitimate user has any reason to connect to this service, every connection is unauthorized by definition, which means zero false positives.
 
 ### 2.5 AES-256-CTR Encryption via OpenSSL
 
@@ -151,7 +151,7 @@ AES in Counter (CTR) mode is a NIST-standardized symmetric encryption scheme [8]
 - **No padding required**: CTR mode produces ciphertext of the same length as the plaintext, which is important for network protocols with size constraints such as ICMP.
 - **Parallelizable**: Counter blocks are independent of each other, enabling hardware acceleration.
 
-The implementation calls OpenSSL's libcrypto through Python ctypes, so we get production-grade encryption without needing any pip-installed packages.
+The implementation calls OpenSSL's libcrypto [14] through Python ctypes, so we get production-grade encryption without needing any pip-installed packages.
 
 ---
 
@@ -353,7 +353,7 @@ Both machines run `bash setup_env.sh` which auto-detects WSL2 and installs the a
 | Fileless ICMP C2 | `red_team/red_attacker.py` | Main attack: SSTI → memfd_create → AES-256-CTR ICMP C2 shell | Yes (raw ICMP socket) |
 | TCP Reverse Shell | `red_team/red_reverse_shell.py` | eBPF v1 bypass: fork → connect → dup2 → pty.spawn | No |
 | WAF Bypass Exploit | `red_team/exploit.py` | Backup: Base64 + `${IFS}` space evasion | No |
-| Recon Script | `red_team/recon.sh` | Automated nmap port + service scanning | Depends on scan type |
+| Recon Script | `red_team/recon.sh` | Automated nmap SYN scan (no -sV to avoid triggering honeypot) | Yes (raw SYN) |
 | IP Switch | `red_team/ip_switch.sh` | IP alias add/remove to bypass iptables blocks | Yes |
 | Exfil Agent | `red_team/exfil_agent.py` | Deployed on target: collects files, sends via DNS/ICMP | No |
 | Exfil Listener | `red_team/exfil_listener.py` | Runs on attacker: fake DNS server + ICMP receiver | Yes (port 53 + raw ICMP) |
@@ -381,7 +381,7 @@ Both machines run `bash setup_env.sh` which auto-detects WSL2 and installs the a
 | Dependency | Used by | Notes |
 |------------|---------|-------|
 | nmap | recon.sh | Port scanning; installed via apt |
-| BCC (python3-bpfcc) | eBPF MDR v1/v2 | eBPF compiler; only on native Linux (not WSL2) |
+| BCC (python3-bpfcc) [13] | eBPF MDR v1/v2 | eBPF compiler; only on native Linux (not WSL2) |
 | linux-headers | eBPF MDR v1/v2 | Required for eBPF compilation; only on native Linux |
 | OpenSSL libcrypto | red_attacker.py | AES-256-CTR encryption via ctypes; pre-installed on all Linux |
 | Flask | target_app.py, soc_dashboard.py | Web framework; installed in venv |
