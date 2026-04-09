@@ -51,6 +51,10 @@
 cd ~/cybersecurity
 bash setup_env.sh
 
+# ⚠️ 所有 Lab 端的終端（T1、T2）都必須從同一份 repo 目錄跑！
+# honeypot 和 MDR 根據 script 路徑自動算 trap.log 位置，
+# 如果從不同 clone 啟動，trap.log 會寫到不同路徑，MDR 讀不到。
+
 # 每次開新終端都要先啟用 venv
 source .venv/bin/activate
 

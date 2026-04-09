@@ -397,6 +397,8 @@ Covert C2 channel 的加密從 XOR 升級到 AES-256-CTR：
 
 ### 準備（所有終端都要）
 
+> **注意**：Lab 端所有終端（靶機、蜜罐、MDR、eBPF）必須從**同一份 repo clone** 啟動。honeypot 和 MDR 根據 script 路徑自動算 trap.log 位置，從不同 clone 跑會導致路徑不同，MDR 讀不到 honeypot 的 log。
+
 ```bash
 cd ~/cybersecurity && source .venv/bin/activate
 ```

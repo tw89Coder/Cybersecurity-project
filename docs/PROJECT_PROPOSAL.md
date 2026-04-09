@@ -395,6 +395,8 @@ The full demo takes about 20-25 minutes across 7 rounds. Here is the condensed f
 
 ### Setup (all terminals)
 
+> **Important**: All Lab-side terminals (target, honeypot, MDR, eBPF) must run from the **same repo clone**. The honeypot writes `trap.log` relative to its script path, and the MDR reads from the same relative path. Running from different clones causes path mismatch.
+
 ```bash
 cd ~/cybersecurity && source .venv/bin/activate
 ```
