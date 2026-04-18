@@ -422,7 +422,7 @@ sudo bash red_team/ip_switch.sh add
 # → 備用 IP 就緒，被封鎖後不會失去連線
 
 # WSL2 T4：碰蜜罐 → 被封鎖
-nc -v <TARGET_IP> 2222
+nc -w 3 -v <TARGET_IP> 2222
 # → MDR 自動用 iptables 封鎖攻擊者原始 IP
 
 # WSL2 T4：用備用 IP 繼續攻擊

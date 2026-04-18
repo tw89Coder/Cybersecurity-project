@@ -420,7 +420,7 @@ sudo bash red_team/ip_switch.sh add
 # → backup IP ready, prevents lockout when original IP gets blocked
 
 # WSL2 T4: touch the honeypot → get blocked
-nc -v <TARGET_IP> 2222
+nc -w 3 -v <TARGET_IP> 2222
 # → MDR auto-blocks attacker's original IP via iptables
 
 # WSL2 T4: continue attack using backup IP

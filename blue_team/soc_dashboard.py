@@ -29,6 +29,8 @@ app = Flask(__name__)
 events = []
 event_lock = threading.Lock()
 stats = {'total': 0, 'blocked_ips': set(), 'kills': 0, 'criticals': 0}
+MAX_EVENTS = 5000
+API_TOKEN = None
 
 TRAP_IP_RE = re.compile(
     r'\[([^\]]+)\]\s+Attacker IP:\s*(\d+\.\d+\.\d+\.\d+)\s+Port:\s*(\d+)')
@@ -94,6 +96,19 @@ def parse_soc_jsonl(line):
         return None
 
 
+def _add_event(evt):
+    events.append(evt)
+    stats['total'] += 1
+    if evt.get('ip'):
+        stats['blocked_ips'].add(evt['ip'])
+    if evt.get('action') == 'KILLED':
+        stats['kills'] += 1
+    if evt.get('severity') == 'CRITICAL':
+        stats['criticals'] += 1
+    if len(events) > MAX_EVENTS:
+        del events[:len(events) - MAX_EVENTS // 2]
+
+
 def watcher_loop(watchers, poll_interval):
     while True:
         for w in watchers:
@@ -101,14 +116,7 @@ def watcher_loop(watchers, poll_interval):
             if new:
                 with event_lock:
                     for evt in new:
-                        events.append(evt)
-                        stats['total'] += 1
-                        if evt.get('ip'):
-                            stats['blocked_ips'].add(evt['ip'])
-                        if evt.get('action') == 'KILLED':
-                            stats['kills'] += 1
-                        if evt.get('severity') == 'CRITICAL':
-                            stats['criticals'] += 1
+                        _add_event(evt)
         time.sleep(poll_interval)
 
 
@@ -157,19 +165,16 @@ def stream():
 def api_event():
     """HTTP API for tools to POST events directly."""
     from flask import request
+    if API_TOKEN:
+        auth = request.headers.get('Authorization', '')
+        if auth != f'Bearer {API_TOKEN}':
+            return 'Unauthorized', 401
     data = request.get_json(silent=True)
     if not data:
         return 'Bad request', 400
     data.setdefault('ts', time.strftime('%Y-%m-%d %H:%M:%S'))
     with event_lock:
-        events.append(data)
-        stats['total'] += 1
-        if data.get('ip'):
-            stats['blocked_ips'].add(data['ip'])
-        if data.get('action') == 'KILLED':
-            stats['kills'] += 1
-        if data.get('severity') == 'CRITICAL':
-            stats['criticals'] += 1
+        _add_event(data)
     return 'OK', 200
 
 
@@ -374,7 +379,12 @@ def main():
                     help='SOC events JSONL path')
     ap.add_argument('--poll', type=float, default=0.5,
                     help='Log poll interval in seconds (default 0.5)')
+    ap.add_argument('--api-token', type=str, default='',
+                    help='Bearer token for /api/event (empty = no auth)')
     args = ap.parse_args()
+
+    global API_TOKEN
+    API_TOKEN = args.api_token or None
 
     print('\033[94m')
     print('+' + '=' * 52 + '+')
@@ -385,7 +395,9 @@ def main():
     print(f'  Web UI   : http://{args.host}:{args.port}')
     print(f'  Trap log : {os.path.abspath(args.trap_log)}')
     print(f'  SOC log  : {os.path.abspath(args.soc_log)}')
+    token_str = f'Bearer {API_TOKEN}' if API_TOKEN else 'NONE (open)'
     print(f'  API      : POST http://{args.host}:{args.port}/api/event')
+    print(f'  API auth : {token_str}')
     print()
     print('[*] Open the URL above in a browser.')
     print('[*] Events will appear in real-time.\n')

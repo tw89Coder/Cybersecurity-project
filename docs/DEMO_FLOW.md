@@ -644,6 +644,56 @@ TCP bypass     port detect      eBPF 偵測不到
 | 上次 demo 殘留影響本次 | `sudo bash cleanup.sh`（清除程序、iptables、log、loot、crontab） |
 | 想預覽會清什麼 | `sudo bash cleanup.sh --dry` |
 | C2 啟動前確認環境 | `sudo bash red_team/check_connectivity.sh <TARGET> <ATTACKER>` |
+| ICMP 被實驗室防火牆封鎖 | 見下方「ICMP 被封鎖時的處理方案」 |
+
+### ICMP 被封鎖時的處理方案
+
+C2 使用 ICMP echo request 作為 covert channel，如果實驗室環境封鎖 ICMP，C2 將完全無法運作。
+
+**診斷步驟：**
+
+```bash
+# 1. 確認 ICMP 是否真的不通
+ping -c 3 <TARGET_IP>
+
+# 2. 檢查本機防火牆
+sudo iptables -L -n | grep icmp
+sudo ufw status verbose
+
+# 3. 完整環境診斷
+sudo bash red_team/check_connectivity.sh <TARGET_IP> <ATTACKER_IP>
+```
+
+**方案 A：解鎖本機 ICMP（優先嘗試）**
+
+如果是本機 iptables / UFW 擋的（例如上次 demo 的 MDR 殘留規則）：
+
+```bash
+# 清除所有殘留規則
+sudo bash cleanup.sh
+
+# 或手動放行 ICMP
+sudo iptables -I INPUT -p icmp --icmp-type echo-request -j ACCEPT
+sudo iptables -I OUTPUT -p icmp --icmp-type echo-reply -j ACCEPT
+```
+
+**方案 B：請實驗室管理員放行**
+
+如果是機房/校園層級的防火牆封鎖 ICMP，本機設定無法解決。需要：
+- 請管理員在兩台 demo 機器之間放行 ICMP (echo request/reply)
+- 或申請一段不受限的內網 VLAN 供 demo 使用
+
+**方案 C：改用其他傳輸協定（需改程式碼）**
+
+如果完全無法解鎖 ICMP，需要將 C2 的傳輸層從 ICMP 改為其他協定：
+
+| 替代協定 | 優點 | 缺點 | 改動幅度 |
+|----------|------|------|----------|
+| DNS (port 53) | 幾乎不被封，專案已有 `DNSExfiltrator` 可參考 | 頻寬低、延遲高 | 中 |
+| HTTP/HTTPS (80/443) | 看起來像正常流量 | 需改為 polling 架構 | 高 |
+| TCP 自訂 port | 最接近現有架構 | 容易被偵測、port 可能也被封 | 低 |
+
+> 方案 C 涉及 `red_attacker.py` 的傳輸層重寫，建議組內討論後再決定。
 
 ---
 

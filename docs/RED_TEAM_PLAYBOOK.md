@@ -222,3 +222,4 @@ Privilege Escalation 和 Impact 我們沒有做，主要是控制演練的影響
 5. **不做提權和破壞** — 控制影響範圍就好
 6. **完整 Demo 腳本** — 看 `docs/DEMO_FLOW.md`，有 7 回合的完整流程
 7. **收尾** — Demo 完跑 `sudo bash cleanup.sh` 清掉殘留（程序、iptables、log、loot、crontab）
+8. **ICMP 不通** — C2 靠 ICMP 傳輸，如果 ping 不通就跑不了。先跑 `check_connectivity.sh` 診斷，優先嘗試 `cleanup.sh` 清殘留規則或手動 `iptables -I INPUT -p icmp --icmp-type echo-request -j ACCEPT`。若是機房防火牆擋的則需請管理員放行。詳見 `docs/DEMO_FLOW.md` 故障排除段落
