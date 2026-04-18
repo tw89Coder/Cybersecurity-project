@@ -12,15 +12,15 @@
 | 機器 | 角色 | 系統 | 說明 |
 |------|------|------|------|
 | **Lab 機器** | 靶機 + 藍軍 | Ubuntu 24.04 (原生) | 跑 target、honeypot、eBPF、MDR、SOC |
-| **WSL2 筆電** | 紅軍攻擊機 | Ubuntu 22.04 (WSL2) | 跑 recon、exploit、C2、reverse shell |
+| **攻擊機** | 紅軍攻擊機 | Ubuntu (原生) | 跑 recon、exploit、C2、reverse shell |
 
-> WSL2 沒有 linux-headers 所以跑不了 eBPF，紅方工具不需要 eBPF 所以沒差。
+> 紅方已經從 WSL2 移轉至原生 Linux 環境執行。
 
 | 項目 | 說明 |
 |------|------|
-| 終端數量 | **4 個**（Lab 2 個 + WSL2 2 個） |
-| Root 權限 | Lab 端（靶機 + 藍軍）需要 sudo |
-| 安裝 | 兩台都跑 `bash setup_env.sh`（會自動偵測 WSL2） |
+| 終端數量 | **4 個**（Lab 2 個 + 攻擊機 2 個） |
+| Root 權限 | 雙方所需工具運行時若要求 Root 皆需 sudo |
+| 安裝 | 兩台都跑 `bash setup_env.sh` |
 
 ### 終端配置
 
@@ -28,8 +28,8 @@
 |------|------|------|----------|
 | **T1** | Lab | 靶機 (Target + Honeypot) | 白色 |
 | **T2** | Lab | 藍軍 (Blue Team) | 藍色 |
-| **T3** | WSL2 | 紅軍 C2 / Listener | 紅色 |
-| **T4** | WSL2 | 紅軍攻擊指令 | 黃色 |
+| **T3** | 攻擊機 | 紅軍 C2 / Listener | 紅色 |
+| **T4** | 攻擊機 | 紅軍攻擊指令 | 黃色 |
 
 > **提示**：T1 需要同時跑靶機和蜜罐，可用 tmux 分割或開兩個子終端。
 
@@ -39,7 +39,7 @@
 
 ```
 <TARGET_IP>   = Lab 機器 IP（例如 100.103.146.70）
-<ATTACKER_IP> = WSL2 攻擊機 IP（你的 WSL2 IP）
+<ATTACKER_IP> = 攻擊機 IP（例如 100.103.146.71）
 ```
 
 ---
@@ -201,18 +201,21 @@ curl -s --connect-timeout 3 http://<TARGET_IP>:9999/
 bash red_team/ip_switch.sh add
 ```
 
-預期輸出：
+預期輸出會動態偵測您的網卡並產生新 IP（例如從 192.168.1.100 產生 192.168.1.200）：
 ```
-[*] Adding alias IP: 172.22.137.15 on eth0
+[*] Detected default interface: ens33 (192.168.1.100)
+[*] Adding alias IP: 192.168.1.200 on ens33
 [+] Done. Current IPs:
-    inet 172.22.137.14/20    ← 被封鎖的 IP
-    inet 172.22.137.15/20    ← 新的未封鎖 IP
+    inet 192.168.1.100/24    ← 被封鎖的 IP
+    inet 192.168.1.200/24    ← 新的未封鎖 IP
 ```
 
 ### T4 — 用新 IP 測試連線
 
+> 💡 **提示**：上一步會產生一個新的 `ALIAS_IP`，請自行將以下的 `<ALIAS_IP>` 替換為終端顯示出來的實際 IP。
+
 ```bash
-curl -s --interface 172.22.137.15 http://<TARGET_IP>:9999/
+curl -s --interface <ALIAS_IP> http://<TARGET_IP>:9999/
 ```
 
 → 連線成功！新 IP 未被封鎖。
@@ -503,7 +506,7 @@ Listener 不會收到連線（進程在 connect() 前被殺）。
 > **目的**：展示即使兩層防禦都開著，DNS/ICMP covert channel 的 data exfiltration 仍然偵測不到
 > **MITRE ATT&CK**: T1005 (Data from Local System), T1048.003 (Exfiltration Over Alternative Protocol)
 
-### T3 — 啟動 Exfil Listener（WSL2）
+### T3 — 啟動 Exfil Listener（攻擊機）
 
 ```bash
 sudo .venv/bin/python3 red_team/exfil_listener.py

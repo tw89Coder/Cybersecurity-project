@@ -86,19 +86,18 @@ echo ""
 # ── 3. Remove IP aliases ────────────────────────────────────
 echo "[3/6] Removing IP aliases..."
 
-# Read alias IP from ip_switch.sh if it exists
-ALIAS_IP="172.22.137.15"
-INTERFACE="eth0"
-if [[ -f "$SCRIPT_DIR/red_team/ip_switch.sh" ]]; then
-    ALIAS_IP=$(grep 'ALIAS_IP=' "$SCRIPT_DIR/red_team/ip_switch.sh" | head -1 | cut -d'"' -f2)
-    INTERFACE=$(grep 'INTERFACE=' "$SCRIPT_DIR/red_team/ip_switch.sh" | head -1 | cut -d'"' -f2)
-fi
-
-if ip addr show "$INTERFACE" 2>/dev/null | grep -q "$ALIAS_IP"; then
-    echo "  Found alias IP: $ALIAS_IP on $INTERFACE"
-    run "ip addr del $ALIAS_IP/20 dev $INTERFACE"
+STATE_FILE="$SCRIPT_DIR/red_team/.alias_ip_state"
+if [[ -f "$STATE_FILE" ]]; then
+    ALIAS_CIDR=$(sed -n 1p "$STATE_FILE")
+    INTERFACE=$(sed -n 2p "$STATE_FILE")
+    ALIAS_IP=$(echo "$ALIAS_CIDR" | cut -d/ -f1)
+    if ip addr show "$INTERFACE" 2>/dev/null | grep -q "$ALIAS_IP"; then
+        echo "  Found alias IP: $ALIAS_IP on $INTERFACE"
+        run "ip addr del $ALIAS_CIDR dev $INTERFACE"
+    fi
+    run "rm -f '$STATE_FILE'"
 else
-    echo "  No alias IP found (clean)."
+    echo "  No alias IP state found (clean)."
 fi
 
 echo "  Done."
