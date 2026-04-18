@@ -635,7 +635,7 @@ TCP bypass     port detect      eBPF 偵測不到
 | eBPF 載入失敗 | `sudo apt install bpfcc-tools python3-bpfcc linux-headers-$(uname -r)` |
 | Flask 啟動失敗 | `pip3 install flask` |
 | nmap 權限不足 | `sudo bash red_team/recon.sh` |
-| C2 收不到 beacon | 確認防火牆允許 ICMP，兩機器能互 ping |
+| C2 收不到 beacon | 見下方「C2 失敗排查」 |
 | Reverse shell 連不上 | 確認防火牆允許 TCP 4444，attacker IP 正確 |
 | eBPF v2 誤殺合法進程 | 用 `--whitelist PID1,PID2` 排除 |
 | 蜜罐 port 2222 被占用 | `sudo lsof -i :2222` 找出佔用進程 |
@@ -645,6 +645,48 @@ TCP bypass     port detect      eBPF 偵測不到
 | 想預覽會清什麼 | `sudo bash cleanup.sh --dry` |
 | C2 啟動前確認環境 | `sudo bash red_team/check_connectivity.sh <TARGET> <ATTACKER>` |
 | ICMP 被實驗室防火牆封鎖 | 見下方「ICMP 被封鎖時的處理方案」 |
+
+### C2 失敗排查
+
+C2 收不到 beacon 時，依以下順序排查：
+
+**Step 1：先清殘留，再診斷**
+
+```bash
+# 清掉上次 demo 的 iptables / IP alias / 殘留程序
+sudo bash cleanup.sh
+
+# 完整環境診斷
+sudo bash red_team/check_connectivity.sh <TARGET_IP> <ATTACKER_IP>
+```
+
+**Step 2：根據診斷結果判斷原因**
+
+| 診斷結果 | 原因 | 解法 |
+|----------|------|------|
+| iptables 有 DROP 規則（cleanup 前） | 上次 demo MDR 殘留封鎖了攻擊機 IP | `cleanup.sh` 已清除，重新跑 C2 |
+| ping 不通，但 iptables 乾淨 | 機房/校園防火牆封鎖 ICMP | 見下方「ICMP 被封鎖時的處理方案」 |
+| 全部 OK 但 C2 還是不行 | 可能是 demo 順序問題 | 見下方「常見錯誤順序」 |
+
+**Step 3：確認 demo 順序正確**
+
+C2 攻擊（Round 3）必須在蜜罐觸發（Round 4）**之前**執行。如果順序反了：
+
+```
+[X] 錯誤順序:
+  nc TARGET 2222      ← 觸發蜜罐 → MDR 封鎖攻擊機 IP
+  跑 C2 (原始 IP)     ← 被 iptables DROP → 完全不通
+
+[OK] 正確順序:
+  Round 3: 跑 C2 (ICMP C2 攻擊)     ← IP 還沒被封，C2 正常運作
+  Round 4: nc TARGET 2222            ← 觸發蜜罐，IP 被封
+  Round 5: ip_switch.sh add          ← 切換新 IP 繼續攻擊
+```
+
+> 如果已經觸發蜜罐才要跑 C2，必須先 `ip_switch.sh add` 取得新 IP，
+> 然後用新 IP 作為 `--lhost`：`sudo .venv/bin/python3 red_team/red_attacker.py -t <TARGET> -l <ALIAS_IP>`
+
+---
 
 ### ICMP 被封鎖時的處理方案
 
