@@ -51,7 +51,7 @@
 cd ~/cybersecurity
 bash setup_env.sh
 
-# ⚠️ 所有 Lab 端的終端（T1、T2）都必須從同一份 repo 目錄跑！
+# 所有 Lab 端的終端（T1、T2）都必須從同一份 repo 目錄跑！
 # honeypot 和 MDR 根據 script 路徑自動算 trap.log 位置，
 # 如果從不同 clone 啟動，trap.log 會寫到不同路徑，MDR 讀不到。
 
@@ -61,7 +61,7 @@ source .venv/bin/activate
 # 需要 sudo 的工具用這個方式跑（保留 venv 的 Python）：
 sudo .venv/bin/python3 <script.py>
 
-# ℹ️ 建議在跑 C2 之前先執行環境預檢：
+#  建議在跑 C2 之前先執行環境預檢：
 sudo bash red_team/check_connectivity.sh <TARGET_IP> <ATTACKER_IP>
 ```
 
@@ -215,7 +215,7 @@ bash red_team/ip_switch.sh add
 
 ### T4 — 用新 IP 測試連線
 
-> 💡 **提示**：上一步會產生一個新的 `ALIAS_IP`，請自行將以下的 `<ALIAS_IP>` 替換為終端顯示出來的實際 IP。
+> **提示**：上一步會產生一個新的 `ALIAS_IP`，請自行將以下的 `<ALIAS_IP>` 替換為終端顯示出來的實際 IP。
 
 ```bash
 curl -s --interface <ALIAS_IP> http://<TARGET_IP>:9999/
