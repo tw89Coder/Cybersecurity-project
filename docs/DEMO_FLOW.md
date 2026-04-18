@@ -60,6 +60,9 @@ source .venv/bin/activate
 
 # 需要 sudo 的工具用這個方式跑（保留 venv 的 Python）：
 sudo .venv/bin/python3 <script.py>
+
+# ℹ️ 建議在跑 C2 之前先執行環境預檢：
+sudo bash red_team/check_connectivity.sh <TARGET_IP> <ATTACKER_IP>
 ```
 
 > **重要**：所有 Python 工具都透過 venv 執行，避免汙染系統環境。
@@ -149,7 +152,7 @@ sudo bash red_team/ip_switch.sh add
 ### T4 — 紅方嘗試連線 SSH（踩到蜜罐）
 
 ```bash
-nc -v <TARGET_IP> 2222
+nc -w 3 -v <TARGET_IP> 2222
 ```
 
 預期輸出：
@@ -637,9 +640,10 @@ TCP bypass     port detect      eBPF 偵測不到
 | eBPF v2 誤殺合法進程 | 用 `--whitelist PID1,PID2` 排除 |
 | 蜜罐 port 2222 被占用 | `sudo lsof -i :2222` 找出佔用進程 |
 | iptables 規則殘留 | `sudo bash cleanup.sh` 一鍵清除 |
-| ip_switch.sh IP 不對 | 編輯腳本中的 PRIMARY_IP 和 ALIAS_IP 變數 |
+| ip_switch.sh IP 不對 | 腳本現在會自動偵測網卡與 IP，不再需要手動編輯 |
 | 上次 demo 殘留影響本次 | `sudo bash cleanup.sh`（清除程序、iptables、log、loot、crontab） |
 | 想預覽會清什麼 | `sudo bash cleanup.sh --dry` |
+| C2 啟動前確認環境 | `sudo bash red_team/check_connectivity.sh <TARGET> <ATTACKER>` |
 
 ---
 

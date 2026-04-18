@@ -97,7 +97,20 @@ if [[ -f "$STATE_FILE" ]]; then
     fi
     run "rm -f '$STATE_FILE'"
 else
-    echo "  No alias IP state found (clean)."
+    # Fallback: 掃描所有帶 label ":0" 的 IP alias 並全部清除
+    FOUND=false
+    for iface in $(ip -o link show | awk -F': ' '{print $2}' | grep -v lo); do
+        ALIASES=$(ip -4 addr show dev "$iface" label "${iface}:*" 2>/dev/null | grep -oP '(?<=inet\s)\S+' || true)
+        for alias_cidr in $ALIASES; do
+            alias_ip=$(echo "$alias_cidr" | cut -d/ -f1)
+            echo "  Found alias IP: $alias_ip on $iface (fallback scan)"
+            run "ip addr del $alias_cidr dev $iface"
+            FOUND=true
+        done
+    done
+    if ! $FOUND; then
+        echo "  No alias IP found (clean)."
+    fi
 fi
 
 echo "  Done."
