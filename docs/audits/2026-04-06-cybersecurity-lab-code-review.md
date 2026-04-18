@@ -74,7 +74,7 @@ obfuscated_payload = f"127.0.0.1;echo${{IFS}}{b64_payload}|base64${{IFS}}-d|b\\a
 
 **ARCH-002（低）**：`exfil_agent.py:79` 蒐集 `~/vuln_api.py`，應改為 `~/target_app.py` 或移除。
 
-**README 專案樹 vs 實際檔案**：完全一致 ✅（18 個檔案逐一驗證）。
+**README 專案樹 vs 實際檔案**：完全一致 [OK]（18 個檔案逐一驗證）。
 
 ---
 
@@ -108,20 +108,20 @@ client_str = client_data.decode(errors='replace').replace('\n', ' ').replace('\r
 
 ---
 
-### 4. eBPF 正確性 ✅ 全部通過
+### 4. eBPF 正確性 [OK] 全部通過
 
 **v1 struct 對齊驗證**（`blue_ebpf_mdr.py`）：
 
 | 欄位 | C 類型 | 偏移量 | 大小 | ctypes 對應 | 一致 |
 |------|--------|--------|------|-------------|------|
-| pid | u32 | 0 | 4 | c_uint32 | ✅ |
-| ppid | u32 | 4 | 4 | c_uint32 | ✅ |
-| uid | u32 | 8 | 4 | c_uint32 | ✅ |
-| event_type | u8 | 12 | 1 | c_uint8 | ✅ |
-| killed | u8 | 13 | 1 | c_uint8 | ✅ |
-| comm | char[16] | 14 | 16 | c_char*16 | ✅ |
-| detail | char[128] | 30 | 128 | c_char*128 | ✅ |
-| *尾部填充* | | 158 | 2 | *(自動)* | ✅ |
+| pid | u32 | 0 | 4 | c_uint32 | [OK] |
+| ppid | u32 | 4 | 4 | c_uint32 | [OK] |
+| uid | u32 | 8 | 4 | c_uint32 | [OK] |
+| event_type | u8 | 12 | 1 | c_uint8 | [OK] |
+| killed | u8 | 13 | 1 | c_uint8 | [OK] |
+| comm | char[16] | 14 | 16 | c_char*16 | [OK] |
+| detail | char[128] | 30 | 128 | c_char*128 | [OK] |
+| *尾部填充* | | 158 | 2 | *(自動)* | [OK] |
 
 sizeof = **160 bytes**（4-byte 對齊填充至 160）
 
@@ -129,14 +129,14 @@ sizeof = **160 bytes**（4-byte 對齊填充至 160）
 
 | 欄位 | C 類型 | 偏移量 | 大小 | ctypes 對應 | 一致 |
 |------|--------|--------|------|-------------|------|
-| pid | u32 | 0 | 4 | c_uint32 | ✅ |
-| ppid | u32 | 4 | 4 | c_uint32 | ✅ |
-| uid | u32 | 8 | 4 | c_uint32 | ✅ |
-| event_type | u8 | 12 | 1 | c_uint8 | ✅ |
-| killed | u8 | 13 | 1 | c_uint8 | ✅ |
-| port | u16 | 14 | 2 | c_uint16 | ✅ |
-| comm | char[16] | 16 | 16 | c_char*16 | ✅ |
-| detail | char[128] | 32 | 128 | c_char*128 | ✅ |
+| pid | u32 | 0 | 4 | c_uint32 | [OK] |
+| ppid | u32 | 4 | 4 | c_uint32 | [OK] |
+| uid | u32 | 8 | 4 | c_uint32 | [OK] |
+| event_type | u8 | 12 | 1 | c_uint8 | [OK] |
+| killed | u8 | 13 | 1 | c_uint8 | [OK] |
+| port | u16 | 14 | 2 | c_uint16 | [OK] |
+| comm | char[16] | 16 | 16 | c_char*16 | [OK] |
+| detail | char[128] | 32 | 128 | c_char*128 | [OK] |
 
 sizeof = **160 bytes**（無需尾部填充）
 
@@ -144,52 +144,52 @@ sizeof = **160 bytes**（無需尾部填充）
 
 | 版本 | Placeholder | BPF 程式碼位置 | Python 替換位置 | 狀態 |
 |------|-------------|---------------|----------------|------|
-| v1 | `__KILL_MEMFD__` | :223 | :419 | ✅ |
-| v1 | `__KILL_EXEC__` | :278 | :420 | ✅ |
-| v1 | `__KILL_ICMP_CORR__` | :316 | :421 | ✅ |
-| v2 | `__KILL_MEMFD__` | :126 | :419 | ✅ |
-| v2 | `__KILL_EXEC__` | :159 | :420 | ✅ |
-| v2 | `__KILL_ICMP_CORR__` | :180 | :421 | ✅ |
-| v2 | `__KILL_CONNECT__` | :227 | :422 | ✅ |
-| v2 | `__KILL_DUP2__` | :265 | :423 | ✅ |
-| v2 | `__KILL_DUP3__` | :300 | :424 | ✅ |
+| v1 | `__KILL_MEMFD__` | :223 | :419 | [OK] |
+| v1 | `__KILL_EXEC__` | :278 | :420 | [OK] |
+| v1 | `__KILL_ICMP_CORR__` | :316 | :421 | [OK] |
+| v2 | `__KILL_MEMFD__` | :126 | :419 | [OK] |
+| v2 | `__KILL_EXEC__` | :159 | :420 | [OK] |
+| v2 | `__KILL_ICMP_CORR__` | :180 | :421 | [OK] |
+| v2 | `__KILL_CONNECT__` | :227 | :422 | [OK] |
+| v2 | `__KILL_DUP2__` | :265 | :423 | [OK] |
+| v2 | `__KILL_DUP3__` | :300 | :424 | [OK] |
 
 所有 placeholder 在 `--kill` 和非 `--kill` 模式下均正確替換。
 
 ---
 
-### 5. AES-256-CTR 加密正確性 ✅ 通過（附註一項）
+### 5. AES-256-CTR 加密正確性 [OK] 通過（附註一項）
 
 **ctypes 函數簽名驗證**：
 
 | OpenSSL API | 回傳型別 | 參數型別 | ctypes 定義 | 一致 |
 |-------------|---------|---------|-------------|------|
-| `EVP_CIPHER_CTX_new()` | `EVP_CIPHER_CTX*` | `(void)` | `c_void_p / []` | ✅ |
-| `EVP_aes_256_ctr()` | `const EVP_CIPHER*` | `(void)` | `c_void_p / []` | ✅ |
-| `EVP_EncryptInit_ex()` | `int` | `(ctx*, cipher*, engine*, key*, iv*)` | `c_int / [c_void_p, c_void_p, c_void_p, c_char_p, c_char_p]` | ✅ |
-| `EVP_EncryptUpdate()` | `int` | `(ctx*, out*, outl*, in*, inl)` | `c_int / [c_void_p, c_char_p, POINTER(c_int), c_char_p, c_int]` | ✅ |
-| `EVP_CIPHER_CTX_free()` | `void` | `(ctx*)` | `None / [c_void_p]` | ✅ |
+| `EVP_CIPHER_CTX_new()` | `EVP_CIPHER_CTX*` | `(void)` | `c_void_p / []` | [OK] |
+| `EVP_aes_256_ctr()` | `const EVP_CIPHER*` | `(void)` | `c_void_p / []` | [OK] |
+| `EVP_EncryptInit_ex()` | `int` | `(ctx*, cipher*, engine*, key*, iv*)` | `c_int / [c_void_p, c_void_p, c_void_p, c_char_p, c_char_p]` | [OK] |
+| `EVP_EncryptUpdate()` | `int` | `(ctx*, out*, outl*, in*, inl)` | `c_int / [c_void_p, c_char_p, POINTER(c_int), c_char_p, c_int]` | [OK] |
+| `EVP_CIPHER_CTX_free()` | `void` | `(ctx*)` | `None / [c_void_p]` | [OK] |
 
 **Round-trip 驗證**：
 
 C2 Server 端（`red_attacker.py`）：
 - 加密：`aes_encrypt(pt)` → `iv(16B) + AES-CTR(pt, key, iv)`
 - 解密：`aes_decrypt(data)` → `AES-CTR(data[16:], key, data[:16])`
-- CTR 模式加解密為同一運算 → ✅ round-trip 正確
+- CTR 模式加解密為同一運算 → [OK] round-trip 正確
 
 Agent 端（AGENT_CODE 內嵌）：
 - 加密：`enc(d)` → `iv + _ac(d, iv)`
 - 解密：`dec(d)` → `_ac(d[16:], d[:16])`
-- 同一 `_ac()` 函數、同一 key (`AK = SHA256(SS)`) → ✅ 雙端一致
+- 同一 `_ac()` 函數、同一 key (`AK = SHA256(SS)`) → [OK] 雙端一致
 
-Key 推導：`SHA-256(b"r3dt34m!@#2024xK")` → 32 bytes → ✅ 符合 AES-256 要求。
-每封包隨機 IV：`os.urandom(16)` → ✅ 語義安全。
+Key 推導：`SHA-256(b"r3dt34m!@#2024xK")` → 32 bytes → [OK] 符合 AES-256 要求。
+每封包隨機 IV：`os.urandom(16)` → [OK] 語義安全。
 
 ---
 
 ### 6. MITRE ATT&CK 映射
 
-**README 的 ATT&CK 表**：已正確修正（無 T1071.001、無 T1036）✅
+**README 的 ATT&CK 表**：已正確修正（無 T1071.001、無 T1036）[OK]
 
 **個別檔案標頭仍有 3 處殘留錯誤**：
 
@@ -204,49 +204,49 @@ Key 推導：`SHA-256(b"r3dt34m!@#2024xK")` → 32 bytes → ✅ 符合 AES-256 
 
 | 檔案 | 標註 | 結果 |
 |------|------|------|
-| `exploit.py` | T1059.006, T1027, T1190 | ✅ |
-| `post_exploit.sh` | T1053.003, T1082, T1070.003 | ✅ |
-| `honeypot.py` | T1595 | ✅ |
-| `target_app.py` | T1190 | ✅ |
-| `blue_ebpf_mdr_v2.py` | (標頭無列出，README 表正確) | ✅ |
-| README 攻擊表 | T1190, T1059.006, T1620, T1027, T1095, T1571, T1048.003 | ✅ |
-| README 偵測表 | T1620, T1059, T1095, T1571, T1059.006 | ✅ |
+| `exploit.py` | T1059.006, T1027, T1190 | [OK] |
+| `post_exploit.sh` | T1053.003, T1082, T1070.003 | [OK] |
+| `honeypot.py` | T1595 | [OK] |
+| `target_app.py` | T1190 | [OK] |
+| `blue_ebpf_mdr_v2.py` | (標頭無列出，README 表正確) | [OK] |
+| README 攻擊表 | T1190, T1059.006, T1620, T1027, T1095, T1571, T1048.003 | [OK] |
+| README 偵測表 | T1620, T1059, T1095, T1571, T1059.006 | [OK] |
 
 ---
 
-### 7. 文件完整性 ✅ 全部通過
+### 7. 文件完整性 [OK] 全部通過
 
 README 專案樹列出 18 個檔案 + 2 個子目錄，逐一與檔案系統比對：
 
 | README 列出路徑 | 檔案存在 |
 |----------------|---------|
-| `target/target_app.py` | ✅ |
-| `target/honeypot.py` | ✅ |
-| `red_team/red_attacker.py` | ✅ |
-| `red_team/red_reverse_shell.py` | ✅ |
-| `red_team/exploit.py` | ✅ |
-| `red_team/recon.sh` | ✅ |
-| `red_team/post_exploit.sh` | ✅ |
-| `red_team/ip_switch.sh` | ✅ |
-| `red_team/deploy_agent.sh` | ✅ |
-| `red_team/exfil_agent.py` | ✅ |
-| `red_team/exfil_listener.py` | ✅ |
-| `blue_team/soc_dashboard.py` | ✅ |
-| `blue_team/blue_mdr_network.py` | ✅ |
-| `blue_team/blue_ebpf_mdr.py` | ✅ |
-| `blue_team/blue_ebpf_mdr_v2.py` | ✅ |
-| `docs/DEMO_FLOW.md` | ✅ |
-| `docs/RED_TEAM_PLAYBOOK.md` | ✅ |
-| `docs/REPORT_ZH.md` | ✅ |
-| `docs/REPORT_EN.md` | ✅ |
-| `docs/PROJECT_PROPOSAL.md` | ✅ |
-| `docs/PROJECT_PROPOSAL_ZH.md` | ✅ |
-| `docs/design/exfiltration-design.md` | ✅ |
-| `docs/design/exfiltration-plan.md` | ✅ |
-| `setup_env.sh` | ✅ |
-| `cleanup.sh` | ✅ |
-| `requirements.txt` | ✅ |
-| `README.md` | ✅ |
+| `target/target_app.py` | [OK] |
+| `target/honeypot.py` | [OK] |
+| `red_team/red_attacker.py` | [OK] |
+| `red_team/red_reverse_shell.py` | [OK] |
+| `red_team/exploit.py` | [OK] |
+| `red_team/recon.sh` | [OK] |
+| `red_team/post_exploit.sh` | [OK] |
+| `red_team/ip_switch.sh` | [OK] |
+| `red_team/deploy_agent.sh` | [OK] |
+| `red_team/exfil_agent.py` | [OK] |
+| `red_team/exfil_listener.py` | [OK] |
+| `blue_team/soc_dashboard.py` | [OK] |
+| `blue_team/blue_mdr_network.py` | [OK] |
+| `blue_team/blue_ebpf_mdr.py` | [OK] |
+| `blue_team/blue_ebpf_mdr_v2.py` | [OK] |
+| `docs/DEMO_FLOW.md` | [OK] |
+| `docs/RED_TEAM_PLAYBOOK.md` | [OK] |
+| `docs/REPORT_ZH.md` | [OK] |
+| `docs/REPORT_EN.md` | [OK] |
+| `docs/PROJECT_PROPOSAL.md` | [OK] |
+| `docs/PROJECT_PROPOSAL_ZH.md` | [OK] |
+| `docs/design/exfiltration-design.md` | [OK] |
+| `docs/design/exfiltration-plan.md` | [OK] |
+| `setup_env.sh` | [OK] |
+| `cleanup.sh` | [OK] |
+| `requirements.txt` | [OK] |
+| `README.md` | [OK] |
 
 無多餘檔案、無遺漏。`.gitignore` 正確排除 `loot/`、`recon_results/`、`*.log`、`.venv/`。
 

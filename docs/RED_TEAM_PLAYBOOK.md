@@ -118,9 +118,9 @@ curl -s -X POST http://<TARGET_IP>:9999/diag -d "query=<PAYLOAD>"
 
 | eBPF v1 Hook | 我們是否觸發 | 為什麼 |
 |--------------|-------------|--------|
-| `memfd_create` | ❌ 不觸發 | 不用 memfd，直接 fork |
-| `execve /proc/fd` | ❌ 不觸發 | 不從 /proc/fd 執行 |
-| `socket(SOCK_RAW)` | ❌ 不觸發 | 用 SOCK_STREAM (TCP) |
+| `memfd_create` | [X] 不觸發 | 不用 memfd，直接 fork |
+| `execve /proc/fd` | [X] 不觸發 | 不從 /proc/fd 執行 |
+| `socket(SOCK_RAW)` | [X] 不觸發 | 用 SOCK_STREAM (TCP) |
 
 **攻擊鏈：**
 ```

@@ -14,10 +14,10 @@ PDF 已包含先前審查報告（2026-04-08-proposal-exfil-fixes.md）的修改
 
 | 項目 | Markdown (舊) | PDF (新) | 狀態 |
 |------|-------------|---------|------|
-| Section 1.2 目標 1 | "reconnaissance through C2" | "reconnaissance through actions on objectives (data exfiltration)" | ✅ 已修 |
-| Section 2.2 ATT&CK 表 | 8 項技術 | 13 項技術（補上 T1053.003, T1082, T1005, T1070.003, T1070.004） | ✅ 已修 |
-| Section 8 結論 | 缺 exfiltration 盲點段落 | 已加入 data exfiltration blind spot 段落 | ✅ 已修 |
-| Section 8 總結句 | "7 ATT&CK techniques" | "13 ATT&CK techniques (spanning 9 tactic categories)" | ✅ 已修 |
+| Section 1.2 目標 1 | "reconnaissance through C2" | "reconnaissance through actions on objectives (data exfiltration)" | [OK] 已修 |
+| Section 2.2 ATT&CK 表 | 8 項技術 | 13 項技術（補上 T1053.003, T1082, T1005, T1070.003, T1070.004） | [OK] 已修 |
+| Section 8 結論 | 缺 exfiltration 盲點段落 | 已加入 data exfiltration blind spot 段落 | [OK] 已修 |
+| Section 8 總結句 | "7 ATT&CK techniques" | "13 ATT&CK techniques (spanning 9 tactic categories)" | [OK] 已修 |
 
 ### 新發現的問題
 
@@ -78,20 +78,20 @@ PDF References section 列出：
 
 | # | 文獻 | 引用位置 | 用途 | 審查結果 |
 |---|------|---------|------|---------|
-| [1] | IBM Data Breach Report 2024 | Section 1.1 動機 | 提供全球資料外洩成本 $4.88M 及常見攻擊向量統計 | ✅ 正確引用，數字與 IBM 2024 報告一致 |
-| [2] | Singh et al., ICMP Tunneling, ACISP 2003 | Section 1.1 動機 | 說明 ICMP 缺乏 port-based multiplexing，data field 易被濫用為隱蔽通道 | ✅ 正確引用 |
-| [3] | Hutchins et al., Cyber Kill Chain, 2011 | Section 2.1 | 定義 7 階段 Kill Chain 框架作為專案的攻擊結構基礎 | ✅ 正確引用，Lockheed Martin 原始論文 |
-| [4] | Strom et al., MITRE ATT&CK, 2020 | Section 1.1 + Section 2.2 | 說明 ICMP C2 案例（PingPull, Regin, Cobalt Strike）；作為技術分類框架 | ✅ 正確引用 |
-| [5] | Fleming, eBPF intro, LWN.net 2017 | Section 2.3 | 介紹 eBPF 基礎概念（kernel-space 執行、verifier、tracepoint） | ✅ 正確引用 |
-| [6] | Song, bpf_send_signal, 2019 | Section 2.3 | 說明 bpf_send_signal() helper 在 Linux 5.3 加入，允許 eBPF 直接送 SIGKILL | ✅ 正確引用，kernel commit 可驗證 |
-| [7] | Spitzner, Honeypots, 2003 | Section 2.4 | 定義網路欺敵與 honeypot 的理論基礎 | ✅ 正確引用，經典教科書 |
-| [8] | NIST SP 800-38A, 2001 | Section 2.5 | AES-CTR mode 的標準定義 | ✅ 正確引用，NIST 官方文件 |
-| [9] | Kettle, SSTI, PortSwigger 2015 | Section 3.1 | SSTI 漏洞的原始研究與定義 | ✅ 正確引用，PortSwigger Research 原始文章 |
-| [10] | Kerrisk, memfd_create(2), 2020 | Section 3.2 | memfd_create syscall 的技術定義（Linux 3.17+, syscall 319） | ✅ 正確引用，Linux man-pages |
-| [11] | Postel, RFC 792, 1981 | Section 3.3 | ICMP 協定定義，說明防火牆通常放行 ICMP | ✅ 正確引用，IETF RFC |
-| [12] | Ylonen, RFC 4253, 2006 | **未在 PDF 內文引用** | SSH 傳輸層協定（與 honeypot 假 SSH banner 相關） | ⚠️ Supplementary，建議在 Section 2.4 提及 SSH banner 時加引用，或從 references 移除 |
-| [13] | BCC Authors, 2015– | **未在 PDF 內文引用** | BCC 工具集（eBPF 編譯器） | ⚠️ Supplementary，建議在 Section 2.3 或 5.5 提及 BCC 時加引用 |
-| [14] | OpenSSL Project, 1998– | **未在 PDF 內文引用** | OpenSSL 加密套件 | ⚠️ Supplementary，建議在 Section 2.5 提及 ctypes + OpenSSL 時加引用 |
+| [1] | IBM Data Breach Report 2024 | Section 1.1 動機 | 提供全球資料外洩成本 $4.88M 及常見攻擊向量統計 | [OK] 正確引用，數字與 IBM 2024 報告一致 |
+| [2] | Singh et al., ICMP Tunneling, ACISP 2003 | Section 1.1 動機 | 說明 ICMP 缺乏 port-based multiplexing，data field 易被濫用為隱蔽通道 | [OK] 正確引用 |
+| [3] | Hutchins et al., Cyber Kill Chain, 2011 | Section 2.1 | 定義 7 階段 Kill Chain 框架作為專案的攻擊結構基礎 | [OK] 正確引用，Lockheed Martin 原始論文 |
+| [4] | Strom et al., MITRE ATT&CK, 2020 | Section 1.1 + Section 2.2 | 說明 ICMP C2 案例（PingPull, Regin, Cobalt Strike）；作為技術分類框架 | [OK] 正確引用 |
+| [5] | Fleming, eBPF intro, LWN.net 2017 | Section 2.3 | 介紹 eBPF 基礎概念（kernel-space 執行、verifier、tracepoint） | [OK] 正確引用 |
+| [6] | Song, bpf_send_signal, 2019 | Section 2.3 | 說明 bpf_send_signal() helper 在 Linux 5.3 加入，允許 eBPF 直接送 SIGKILL | [OK] 正確引用，kernel commit 可驗證 |
+| [7] | Spitzner, Honeypots, 2003 | Section 2.4 | 定義網路欺敵與 honeypot 的理論基礎 | [OK] 正確引用，經典教科書 |
+| [8] | NIST SP 800-38A, 2001 | Section 2.5 | AES-CTR mode 的標準定義 | [OK] 正確引用，NIST 官方文件 |
+| [9] | Kettle, SSTI, PortSwigger 2015 | Section 3.1 | SSTI 漏洞的原始研究與定義 | [OK] 正確引用，PortSwigger Research 原始文章 |
+| [10] | Kerrisk, memfd_create(2), 2020 | Section 3.2 | memfd_create syscall 的技術定義（Linux 3.17+, syscall 319） | [OK] 正確引用，Linux man-pages |
+| [11] | Postel, RFC 792, 1981 | Section 3.3 | ICMP 協定定義，說明防火牆通常放行 ICMP | [OK] 正確引用，IETF RFC |
+| [12] | Ylonen, RFC 4253, 2006 | **未在 PDF 內文引用** | SSH 傳輸層協定（與 honeypot 假 SSH banner 相關） | [WARN] Supplementary，建議在 Section 2.4 提及 SSH banner 時加引用，或從 references 移除 |
+| [13] | BCC Authors, 2015– | **未在 PDF 內文引用** | BCC 工具集（eBPF 編譯器） | [WARN] Supplementary，建議在 Section 2.3 或 5.5 提及 BCC 時加引用 |
+| [14] | OpenSSL Project, 1998– | **未在 PDF 內文引用** | OpenSSL 加密套件 | [WARN] Supplementary，建議在 Section 2.5 提及 ctypes + OpenSSL 時加引用 |
 
 ### 文獻品質評估
 

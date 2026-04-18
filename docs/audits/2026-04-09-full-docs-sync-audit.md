@@ -10,13 +10,13 @@
 
 | 檔案 | Kill Chain 階段 | ATT&CK 表 | Exfiltration | 加密標示 | 整體同步度 |
 |------|---------------|-----------|-------------|---------|----------|
-| RED_TEAM_PLAYBOOK.md | 7 階段 ✅ | 13 項 ✅ | ✅ | AES-256-CTR ✅ | **基準** |
-| REPORT_ZH.md | 7 階段 ✅ | 13 項 ✅ | ✅ Phase 5c | AES-256-CTR ✅ | ✅ 同步 |
-| REPORT_EN.md | 7 階段 ✅ | 13 項 ✅ | ✅ Phase 5b | AES-256-CTR ✅ | ✅ 同步 |
-| PROJECT_PROPOSAL.md | 寫 all 7 ✅ | **8 項** ❌ | ✅ | AES-256-CTR ✅ | ⚠️ 部分落後 |
-| PROJECT_PROPOSAL_ZH.md | 寫到 C2 ❌ | **8 項** ❌ | ✅ | AES-256-CTR ✅ | ⚠️ 部分落後 |
-| **README.md** | **只到 Phase 6** ❌ | **8 項，缺 5 個** ❌ | **完全未提** ❌ | **寫 XOR** ❌ | ❌ 嚴重落後 |
-| **PDF (投影片版)** | 寫 six ❌ | 13 項 ✅ | ✅ | AES-256-CTR ✅ | ⚠️ 一處矛盾 |
+| RED_TEAM_PLAYBOOK.md | 7 階段 [OK] | 13 項 [OK] | [OK] | AES-256-CTR [OK] | **基準** |
+| REPORT_ZH.md | 7 階段 [OK] | 13 項 [OK] | [OK] Phase 5c | AES-256-CTR [OK] | [OK] 同步 |
+| REPORT_EN.md | 7 階段 [OK] | 13 項 [OK] | [OK] Phase 5b | AES-256-CTR [OK] | [OK] 同步 |
+| PROJECT_PROPOSAL.md | 寫 all 7 [OK] | **8 項** [FAIL] | [OK] | AES-256-CTR [OK] | [WARN] 部分落後 |
+| PROJECT_PROPOSAL_ZH.md | 寫到 C2 [FAIL] | **8 項** [FAIL] | [OK] | AES-256-CTR [OK] | [WARN] 部分落後 |
+| **README.md** | **只到 Phase 6** [FAIL] | **8 項，缺 5 個** [FAIL] | **完全未提** [FAIL] | **寫 XOR** [FAIL] | [FAIL] 嚴重落後 |
+| **PDF (投影片版)** | 寫 six [FAIL] | 13 項 [OK] | [OK] | AES-256-CTR [OK] | [WARN] 一處矛盾 |
 
 ---
 
@@ -64,14 +64,14 @@
 ### REPORT_ZH.md / REPORT_EN.md
 
 這兩份報告**已經是最新的**，與實際程式碼同步：
-- ✅ Kill Chain 涵蓋 exfiltration（ZH: Phase 5c, EN: Phase 5b）
-- ✅ ATT&CK 表有 13 項技術
-- ✅ 加密正確標示為 AES-256-CTR
-- ✅ 工具清單完整
+- [OK] Kill Chain 涵蓋 exfiltration（ZH: Phase 5c, EN: Phase 5b）
+- [OK] ATT&CK 表有 13 項技術
+- [OK] 加密正確標示為 AES-256-CTR
+- [OK] 工具清單完整
 
 ### RED_TEAM_PLAYBOOK.md
 
-✅ 已驗證為最新，作為基準。
+[OK] 已驗證為最新，作為基準。
 
 ---
 

