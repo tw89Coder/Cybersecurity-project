@@ -136,26 +136,30 @@ def stream():
                 'kills': stats['kills'],
                 'criticals': stats['criticals'],
             }
-            yield f"event: stats\ndata: {json.dumps(s)}\n\n"
-            for evt in events:
-                yield f"event: alert\ndata: {json.dumps(evt)}\n\n"
-            last_idx = len(events)
-
-        while True:
-            time.sleep(0.5)
-            with event_lock:
-                if len(events) > last_idx:
-                    for evt in events[last_idx:]:
+            def generate():
+                with event_lock:
+                    for evt in events:
                         yield f"event: alert\ndata: {json.dumps(evt)}\n\n"
-                    last_idx = len(events)
-                    s = {
-                        'total': stats['total'],
-                        'blocked_ips': len(stats['blocked_ips']),
-                        'kills': stats['kills'],
-                        'criticals': stats['criticals'],
-                    }
-                    yield f"event: stats\ndata: {json.dumps(s)}\n\n"
+                    last_total = stats['total']
 
+                while True:
+                    time.sleep(0.5)
+                    with event_lock:
+                        current_total = stats['total']
+                        if current_total > last_total:
+                            new_count = current_total - last_total
+                            if new_count > len(events):
+                                new_count = len(events)
+                            for evt in events[len(events) - new_count:]:
+                                yield f"event: alert\ndata: {json.dumps(evt)}\n\n"
+                            last_total = current_total
+                            s = {
+                                'total': stats['total'],
+                                'blocked_ips': len(stats['blocked_ips']),
+                                'kills': stats['kills'],
+                                'criticals': stats['criticals'],
+                            }
+                            yield f"event: stats\ndata: {json.dumps(s)}\n\n"
     return Response(generate(), mimetype='text/event-stream',
                     headers={'Cache-Control': 'no-cache',
                              'X-Accel-Buffering': 'no'})
